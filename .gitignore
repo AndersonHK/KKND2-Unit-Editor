@@ -1,7 +1,34 @@
+# Personal game configurations, editor settings, and save backups.
+*.cfg
+*.cfg.*
+!examples/building_limits.example.cfg
+*.bak
+backups/
+UCONFIG/
+editor-backup-*/
+.kknd2-*.tmp
+.limits-*.tmp
+*.log
+
+# Python caches, environments, packaging, and test artifacts.
 __pycache__/
 *.py[cod]
-editor-backup-*/
-*.log
-building_limits.cfg
-building_limits.cfg.*
-backups/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Local IDE/OS files and game binaries (not distributed by this project).
+.idea/
+.vscode/
+.env
+.env.*
+Thumbs.db
+Desktop.ini
+.DS_Store
+*.exe
+*.dll

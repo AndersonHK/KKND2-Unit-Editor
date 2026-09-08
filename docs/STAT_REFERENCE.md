@@ -1,6 +1,6 @@
 # KKND2 stat reference
 
-The maximums below match the installed KKND2 native unit editor and the user's screenshot. They are enforced for new edits. Loading or saving an unrelated edit never clamps an existing value. The numeric representation on disk remains unchanged.
+The maximums below match the reference English KKND2 native unit editor. They are enforced for new edits. Loading or saving an unrelated edit never clamps an existing value. The numeric representation on disk remains unchanged.
 
 | Field | Maximum | Stored unit |
 |---|---:|---|
@@ -20,11 +20,11 @@ The maximums below match the installed KKND2 native unit editor and the user's s
 
 For example, weapon range 320 means 10 tiles; view range 12 means 12 tiles. Delay 60 corresponds nominally to 1 second at normal speed. Delay values are not milliseconds or rendered frame counts. Actual timing also depends on integer frame rounding, animations, veterancy, game speed, and executable patches. The editor does not promise stopwatch timing for KWIPv3 or other altered executables.
 
-## Evidence from the installed original KKND2.exe
+## Evidence from the reference original KKND2.exe
 
 Read-only analysis of the executable on 2026-09-08:
 
-- The 17 native slider metadata records begin at virtual address `0x4B02F0`, with stride `0x24`. The maximum is the dword at record offset `+24`. Slider initialization at `0x428C41` consumes the bounds. These match the screenshot, including accuracy 260 and weapon range 510.
+- The 17 native slider metadata records begin at virtual address `0x4B02F0`, with stride `0x24`. The maximum is the dword at record offset `+24`. Slider initialization at `0x428C41` consumes the bounds. These include accuracy 260 and weapon range 510.
 - All 110 English names were resolved from the config identifier/enum table (`0x4AFEAC`, stride 8) into unit definitions (`0x4CCA20`, stride `0x110`), using their display-name pointer at offset `+8`. Names are embedded in the Python script; no executable reads or additional dependencies are needed at runtime.
 - Build time at definition offset `+0x7C` is multiplied by 30 for the production timer at `0x4205B9`. Building production also uses this value as a divisor after conversion (`0x44303D`), so new zero build times are rejected.
 - View range at definition offset `+0x20` is shifted left 13 at `0x40D608` into map coordinates. A tile is 8192 coordinate subunits, or 32 world pixels.

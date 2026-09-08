@@ -1,49 +1,141 @@
 # KKND2 Unit Editor
 
-Double-click **Launch Editor.vbs** or **Launch Editor.pyw** in this folder. Both use windowed Python and open only the GUI. Avoid opening the `.py` source with a console-based file association. It uses your installed Python 3.9 and opens `UCONFIG_02.cfg` in `<game folder>\UCONFIG`. No packages or installation needed. You can also run `python kknd2_editor.py`, or pass a configuration file as the first argument.
+A small Windows GUI for editing **KKND2: Krossfire** unit configurations without damaging their mixed text encodings. It also offers per-building instance limits for one verified **KWIPv3** executable, applied when launching the game.
 
-1. Choose a configuration, then search for a unit or select a faction.
-2. Select the unit and type its values. The **Saved** column shows values from when you opened or last saved the file. Blue values are unsaved changes. Internal game IDs are shown above the fields; some labels differ from the unit names displayed in-game.
-3. Use **Unsaved** to see all pending edits. **Save** / **Ctrl+S** writes them, including the unit currently on screen.
+The editor uses Python and Tkinter, with no third-party Python packages. It includes English names for all three factions, field limits and units, comparisons with stock defaults, undo/redo, and a layout that scales with Windows DPI and updates while resizing.
 
-**Undo / Ctrl+Z** and **Redo / Ctrl+Y** operate on groups of edits committed when leaving a unit, reviewing, or saving. Saving starts a new undo history. **Revert saved** also clears invalid input. **Ctrl+F** focuses search. Closing or switching files prompts to save pending edits.
+## Requirements
 
-## DPI and smaller windows
+- Windows and Python **3.9 or newer**, with **Tcl/Tk and IDLE** enabled in the Python installer. For the optional VBS launcher, install the Windows Python launcher or add Python to PATH.
+- Your own KKND2: Krossfire installation and its original-format `UCONFIG` files.
+- **KWIPv3.exe** is required only for the **Launch game** button and its building-limit modifications. Editing unit configurations does not require it.
+- Write access to the configuration folders and this checkout, where the editor stores building-limit settings by default.
 
-Fonts, row heights, spacing, and initial window dimensions scale with DPI. The initial window fits inside the Windows work area. At narrow widths, **Units / Search** and **Unit stats** switch between the list and the form; wider windows show both together. Toolbars wrap. The stat panel scrolls vertically and horizontally, and keyboard Tab brings the focused field into view. Use the mouse wheel to scroll stats, Shift+wheel to scroll sideways, or the scrollbars. The **Saved**, **Default**, and **Delta** columns stay reachable at large text sizes.
+Game executables, art, and personal configurations are not included. The embedded unit-stat baseline is a fixed reference snapshot; it is not taken from your current modded files. The UI and unit names are currently English only.
 
-The app uses Tk 8.6 system DPI awareness; Windows handles scaling when moving it to a monitor with a different DPI. Restart on that monitor if you want native text sharpness there.
+## Quick start
 
-## Comparing with defaults
+1. Download the repository ZIP using **Code → Download ZIP**, then extract the entire folder. Alternatively, clone the repository. Do not run files from inside the ZIP.
+2. Put the extracted editor folder directly inside your KKND2 game folder for automatic discovery. Keep `src` beside the launchers.
+3. Double-click **Launch Editor.pyw**. If `.pyw` files are not associated with Python, use **Launch Editor.vbs**. Both start the GUI without a command-prompt window.
+4. The editor opens `UCONFIG_02.cfg` if available, otherwise the first `.cfg` in the detected `UCONFIG` folder. Check the **Configuration** selector before editing.
+5. Choose a unit, enter values, and click **Save** or press **Ctrl+S**. In the game's multiplayer lobby, select that same unit configuration.
 
-All **1,870 values for 110 units** from your user-confirmed default `UCONFIG_02.cfg` were embedded in `kknd2_editor.py` on 2026-09-08. This snapshot never changes when you save a configuration.
+You can keep the editor anywhere. On the **Unit editor** tab, **Folder…** selects the game's `UCONFIG` folder and **Open…** opens an individual configuration. If no installation is detected, the editor opens without a unit configuration so you can select one.
 
-- **Default** shows that frozen value. **Delta** shows current minus default. **Saved** shows the last saved value for the open file.
-- **Defaults** opens all differences, including changes saved in earlier sessions. **Unsaved** lists only changes since opening or last saving.
-- **Different from defaults** filters the unit list. A `~` marks a unit differing from the baseline; `*` marks unsaved changes. Gold deltas indicate differences from defaults.
-- **Reset defaults** restores the selected unit to the embedded baseline. It is undoable and does not write to disk until Save. **Revert saved** restores the last saved values instead.
-- A unit missing from the snapshot shows `n/a`; its default values are never guessed.
+Close the game's own unit editor before saving changes here, to avoid it overwriting them with an older copy.
 
-## File preservation
+### Alternate locations and command-line options
 
-The inspected files mix a 120-byte UTF-16LE title, UTF-16LE stat headings, and an ASCII table beginning at byte 534. Each of the 110 records has 17 numeric or `-` fields. This is why treating the entire file as one text encoding breaks it.
+Run these commands from the extracted repository folder. Paths below are relative examples; replace them with your own paths as needed.
 
-The editor retains the original byte buffer and changes only the chosen numeric field spans, using the existing field widths. It preserves the title, header, IDs, row order, tabs, padding outside edited fields, line endings, and file size. It never adds a BOM. An unchanged save writes nothing. An unrecognized schema is rejected rather than guessed. The title and unavailable `-` fields are not editable.
+```powershell
+python "Launch Editor.pyw" --help
+pythonw "Launch Editor.pyw" --game-dir "..\KKND2 Krossfire"
+pythonw "Launch Editor.pyw" --folder "..\KKND2 Krossfire\UCONFIG"
+pythonw "Launch Editor.pyw" "..\KKND2 Krossfire\UCONFIG\UCONFIG_02.cfg"
+pythonw "Launch Editor.pyw" --limits-file ".\my-limits.cfg"
+```
 
-Every actual save creates and verifies a timestamped copy under **UCONFIG\backups**, writes and flushes a temporary file beside the original, reparses it, then replaces the original atomically and verifies the result. If the original changed since opening, saving stops. Backup or replacement errors are shown and pending edits remain available.
+`--game-dir` explicitly chooses the installation used by Launch game. Otherwise, launch uses the selected unit configuration's parent game folder, then `KKND2_GAME_DIR`, then an installation beside/containing the checkout or in the current working directory. Discovery looks for `UCONFIG` or `KWIPv3.exe`; it does not scan your drives. `--folder` chooses the configuration directory; an explicit file takes precedence for the file opened.
 
-Close the game's unit editor before saving here, so it cannot overwrite changes with a previously loaded copy. Inputs retain the game's stored numbers. Each field now displays its unit and in-game editor maximum. New edits above that maximum are rejected; existing above-limit values are preserved unchanged, never silently clamped. Build time must be at least 1 when edited. Other fields allow zero because stock inactive stats use zero. These limits reproduce the native editor and are not a guarantee that every combination is meaningful in the game. See STAT_REFERENCE.md for units and evidence.
+For a persistent location without editing source, set the Windows user environment variable **KKND2_GAME_DIR** to your game folder and restart the editor. No installation path is stored in the source. The VBS launcher tries `.venv\Scripts\pythonw.exe`, then `pyw.exe -3`, then `pythonw.exe` on PATH.
 
-## Restoring a backup
+## Editing and reviewing changes
 
-Close the Python editor and the game's unit editor. In `UCONFIG\backups`, choose the backup with the correct configuration filename and timestamp. Copy it into `UCONFIG` and rename the copy to the original `.cfg` filename, replacing that file. Keep the backup itself intact.
+The shared top toolbar stays in the same place on both tabs. **Save**, **Unsaved**, **Defaults**, **Open…**, and **Folder…** act on the selected tab.
 
-## Verification
+On the unit tab, search by English name or internal game ID, filter by faction, and select a unit or building. Each stat shows its stored unit and native editor maximum. A `-` means the field is unavailable and cannot be edited. Title text and internal identifiers are preserved.
 
-Run `python test_editor.py`. Tests read **only UCONFIG_02.cfg** and perform all writes on disposable temporary copies. They check exact unchanged round trips, every editable field's byte boundaries, invalid values, undo/redo, backup integrity, failed writes, external edits, and the GUI's edit/filter/save/reopen flow. Additional tests cover persistent default comparisons, undoable resets, and all controls/fields at simulated 100%, 150%, 200%, and 250% DPI in small windows. The tests do not launch the game.
+| Column or indicator | Meaning |
+| --- | --- |
+| Value | Current editable value; blue indicates an unsaved edit |
+| Default | Fixed stock reference value, unaffected by saving |
+| Delta | Current minus default; nonzero differences appear in gold |
+| Saved | Value when the file was opened or last saved |
+| `*` in the unit list | Unit has unsaved changes |
+| `~` in the unit list | Unit differs from the stock baseline |
 
-On another computer, install Python 3.9+ with Tkinter and open `Launch Editor.pyw`; the VBS launcher discovers windowed Python.
+**Unsaved** reviews pending changes across the current configuration. **Defaults** reviews all differences from the baseline, including edits saved in earlier sessions. **Different from defaults** filters the list. Unknown units show `n/a` for defaults rather than an invented baseline.
 
-## Names, limits, and units
+**Undo / Ctrl+Z** and **Redo / Ctrl+Y** operate on edit groups. Unit edits are committed to the in-memory model when leaving a unit, reviewing, or saving. **Revert saved** discards pending edits for the selected unit, while **Reset defaults** restores that unit's reference values. On the building tab these actions apply to its limit configuration. Resetting defaults is undoable and does not save until you click Save. Switching files or closing with pending edits prompts to save, discard, or cancel. **Ctrl+F** focuses unit search.
 
-All 110 unit/building names use the English strings from the installed game, including distinct Evolved and Series 9 names. Search accepts these names and the original internal IDs. Config IDs are never rewritten. Maximum values and units appear below every stat name; default comparisons retain the original frozen snapshot. Speed, armour, and accuracy are explicitly marked as raw ratings because their physical or percentage conversion has not been fully verified.
+New unit values above the native editor caps are rejected. Existing out-of-range values are preserved when unrelated fields are edited; they are never silently clamped. Newly edited build times must be at least 1. See [the stat reference](docs/STAT_REFERENCE.md) for all caps, timing/range units, and the evidence behind them. Movement speed remains a raw rate because its physical conversion has not been verified.
+
+## Building limits and launching KWIPv3
+
+The **Building limits** tab shows 49 building records across the factions, including towers and walls, with 48 editable limits. Values count instances **per player and building type**. These settings are independent of unit statistics and do not belong in a game `UCONFIG` file.
+
+| Building category | Editor bounds |
+| --- | --- |
+| Machine shops and faction equivalents | 1–4 |
+| Barracks and faction equivalents | 1–7 |
+| Other ordinary records, including walls | 1–100 |
+| Altar of the Scourge | Original 0; read-only because of special game logic |
+
+Production buildings retain tighter bounds because of production-menu constraints. The general maximum of 100 is an editor policy, not a proven safe engine maximum for every building or map. Limits do not unlock buildings, alter global unit caps, or add auto-attack or tanker features. Extended in-match behavior has not been exhaustively tested. Network players should use matching modifications.
+
+Limits are stored in **building_limits.cfg** at the checkout root by default. A missing file starts with stock KWIPv3 values and is created when saved. **Open…** selects another building settings file; **Folder…** selects that folder's `building_limits.cfg`. Subsequent saves and launches use the selected file. The versioned UTF-8 JSON schema is `kknd2-editor-building-limits`, version `1`, with a `limits` mapping from internal IDs to integer values. All 49 known keys are required; unknown/duplicate keys and invalid values are rejected. [The example file](examples/building_limits.example.cfg) contains the complete stock schema, not personal settings.
+
+Building settings are saved using a flushed temporary file and atomic replacement, with external-change detection. They do **not** create timestamped `.bak` files. Keep a separate copy yourself if you want multiple presets.
+
+Click **Launch game** at the bottom right to save **both tabs** and launch `KWIPv3.exe` with the selected building limits. In the multiplayer lobby, **select the unit configuration you edited**: the launcher does not choose it automatically. Successfully saved settings remain saved even if launch fails.
+
+The launcher verifies the executable's SHA-256, starts a suspended process, validates all original building-limit values, writes and verifies changed two-byte values, then resumes it. A validation/patch failure terminates the newly created child process. It never patches the executable on disk. Starting the game outside this editor therefore uses its original building limits.
+
+Only this KWIPv3 SHA-256 is supported:
+
+```text
+ebc91ca929e69c1529de9230d28ddb5c4b1534f13074458dd03b805677817d44
+```
+
+Other builds, including executables modified by another patcher, are rejected. Renaming another executable to `KWIPv3.exe` will not make it compatible. Original KKND2 and Carnage are not supported launch targets.
+
+## Unit-file preservation and recovery
+
+Original UCONFIG files mix a 120-byte UTF-16LE title and UTF-16LE column headings with ASCII numeric records. Treating the entire file as one text encoding can corrupt it.
+
+The editor retains the original byte buffer and replaces only explicitly edited numeric field spans within their existing widths. It preserves the title, header, IDs, row order, tabs, unrelated padding, line endings, and file size, and never adds a BOM. It rejects unrecognized columns or malformed records. An unchanged unit save writes nothing.
+
+Before a changed unit save, the editor verifies a timestamped copy in **UCONFIG\backups**, validates the replacement, flushes a temporary file beside the original, and atomically replaces the original. If the source changed externally, a backup cannot be made, or replacement fails, an error is shown and pending edits remain available.
+
+To recover a unit configuration, close both editors, choose the matching filename and timestamp in `UCONFIG\backups`, and copy it back into `UCONFIG` under the original `.cfg` name. Keep the backup intact. These unit backups are separate from building settings, which have no automatic backups.
+
+## Window scaling and troubleshooting
+
+The initial window is 1140 × 1000 logical pixels, approximately 2280 × 2000 at 200% DPI, capped to the screen's available work area. Two-line labels and row spacing are retained. Columns expand with the window; toolbars wrap and panels scroll. Narrow windows switch between the unit list and stats. Tab navigation scrolls focused fields into view. Mouse wheel scrolls vertically; Shift+wheel scrolls horizontally. Resizing remains live during dragging.
+
+- **Double-click does nothing or opens source:** try the other launcher, or run `python "Launch Editor.pyw"` from PowerShell to diagnose the Python installation. Ensure Tcl/Tk is installed.
+- **No configurations listed:** select the game's `UCONFIG` folder using Folder…, or supply `--folder`. A JSON building-limits file cannot be opened as a unit configuration.
+- **Cannot find KWIPv3:** use `--game-dir` or `KKND2_GAME_DIR`. KWIPv3 must be installed separately in the selected game folder.
+- **Unsupported executable:** compare its SHA-256 with the supported value above. Do not bypass the check; patch addresses are specific to that build.
+- **Cannot save / file changed externally:** check folder permissions, close other editors, and reopen the file after preserving any pending edits you need.
+- **Text looks soft after moving between different-DPI monitors:** restart the editor on the target monitor. Tk uses system DPI awareness; scaling across monitors depends on Windows and the installed Tk version.
+
+## Development and tests
+
+```text
+Launch Editor.pyw             Windowed Python entry point
+Launch Editor.vbs             Optional Windows interpreter discovery
+src/kknd2_editor/
+    app.py                   Unit format, defaults, and main Tkinter UI
+    building_limits.py       Settings schema and verified patch metadata
+    limits_ui.py             Building limits page
+    game_launcher.py         Validated Windows process patching
+    paths.py                 Portable game/settings discovery
+tests/                       Parser, save, GUI, launch, and path regressions
+docs/STAT_REFERENCE.md        Field units, maxima, and analysis notes
+examples/                    Stock building settings example
+```
+
+From the repository root, run:
+
+```powershell
+python -m unittest discover -s tests -v
+```
+
+Tests require Tk and an interactive desktop. They generate original-format fixtures from the embedded stock values, write only to temporary directories, and mock game launch. No game installation or proprietary config fixture is required. Coverage includes byte-preserving edits, malformed inputs, failures/external changes, defaults and undo/redo, DPI and live resize behavior, shared toolbar positions, settings, patch validation, and portable paths.
+
+For an optional real-file integration run, set `KKND2_TEST_FILE` to a configuration file before running the same command. That source is read once into a temporary copy; it is never edited.
+
+Personal `.cfg` files, backups, game binaries, caches, environments, and local IDE files are ignored by Git. Only the stock example configuration is included. Keep game files and personal presets out of contributions.

@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+editor-backup-*/
+*.log
+building_limits.cfg
+building_limits.cfg.*
+backups/

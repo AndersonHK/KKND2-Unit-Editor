@@ -33,4 +33,8 @@ def make_editor(*args, **kwargs):
     if not args:
         kwargs.setdefault('folder', FIXTURE_FOLDER)
     kwargs.setdefault('limits_path', FIXTURE_FOLDER / 'unused-default-limits.cfg')
+    kwargs.setdefault('overrides_path', FIXTURE_FOLDER / 'unused-default-overrides.cfg')
+    kwargs.setdefault('unlocks_path', FIXTURE_FOLDER / 'unused-default-unlocks.cfg')
+    kwargs.setdefault('projectiles_path', FIXTURE_FOLDER / 'unused-default-projectiles.cfg')
+    kwargs.setdefault('fixes_path', FIXTURE_FOLDER / 'unused-default-fixes.cfg')
     return editor.Editor(*args, **kwargs)

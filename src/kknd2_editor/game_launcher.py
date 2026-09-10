@@ -6,6 +6,11 @@ import hashlib
 import os
 import struct
 from .building_limits import BUILDINGS, validate
+from . import overrides_patch
+from .overrides import validate as validate_overrides
+from . import tech_unlocks, projectiles_patch, fixes_patch
+from .fixes import validate as validate_fixes
+from .projectiles import validate as validate_projectiles
 
 SUPPORTED_SHA256 = 'ebc91ca929e69c1529de9230d28ddb5c4b1534f13074458dd03b805677817d44'
 
@@ -29,7 +34,66 @@ def apply_limits(read, write, values):
     return len(plan)
 
 
-def launch_game(executable, values, dry_run=False):
+def apply_configuration(read, write, values, overrides, allocate, seal, unlocks=None, projectiles=None, fixes=None):
+    """Validate every feature's original sites before any process memory write."""
+    validate(values)
+    for spec in BUILDINGS.values():
+        if read(spec['address'], 2) != struct.pack('<H', spec['default']):
+            raise ValueError('KWIPv3 building data does not match the supported build.')
+    plan = patch_plan(values)
+    building_count = len(plan)
+    if unlocks is not None:
+        tech_unlocks.validate(unlocks)
+        tech_unlocks.validate_memory(read)
+    if projectiles is not None:
+        validate_projectiles(projectiles)
+        projectiles_patch.validate_memory(read)
+    if fixes is not None:
+        validate_fixes(fixes)
+        fixes_patch.validate_memory(read, fixes)
+    if overrides is not None:
+        validate_overrides(overrides)
+        overrides_patch.validate_memory(read)
+        blob, _ = overrides_patch.stub_bundle(overrides)
+        address = allocate(len(blob)) if blob else 0
+        override_plan = overrides_patch.patch_plan(overrides, address)
+        if blob:
+            write(address, blob)
+            if read(address, len(blob)) != blob:
+                raise OSError('Override helper verification failed.')
+            seal(address, len(blob))
+        plan.extend(override_plan)
+    if unlocks is not None:
+        data, _ = tech_unlocks.table_bundle(unlocks)
+        if data:
+            address = allocate(len(data))
+            if not 0 < address <= 0xffffffff - len(data):
+                raise ValueError('Tech unlocks require a valid 32-bit allocation.')
+            data, unlock_plan = tech_unlocks.table_bundle(unlocks, address)
+            write(address, data)
+            if read(address, len(data)) != data:
+                raise OSError('Tech unlock table verification failed.')
+            plan.extend(unlock_plan)
+    if projectiles is not None:
+        blob = projectiles_patch.lifetime_stub(projectiles)
+        address = allocate(len(blob)) if blob else 0
+        projectile_plan = projectiles_patch.patch_plan(projectiles, address)
+        if blob:
+            write(address, blob)
+            if read(address, len(blob)) != blob:
+                raise OSError('Projectile helper verification failed.')
+            seal(address, len(blob))
+        plan.extend(projectile_plan)
+    if fixes is not None:
+        plan.extend(fixes_patch.prepare(read, write, allocate, seal, fixes))
+    for address, before, after in plan:
+        write(address, after)
+        if read(address, len(after)) != after:
+            raise OSError(f'Game patch verification failed at {address:#x}.')
+    return building_count, len(plan) - building_count
+
+
+def launch_game(executable, values, dry_run=False, overrides=None, unlocks=None, projectiles=None, fixes=None):
     """Create our own suspended process, verify/patch, and only then resume it.
 
     dry_run verifies a real suspended process and terminates it without running
@@ -39,6 +103,14 @@ def launch_game(executable, values, dry_run=False):
         raise OSError('The KWIPv3 launcher requires Windows.')
     exe = Path(executable).resolve()
     validate(values)
+    if overrides is not None:
+        validate_overrides(overrides)
+    if unlocks is not None:
+        tech_unlocks.validate(unlocks)
+    if projectiles is not None:
+        validate_projectiles(projectiles)
+    if fixes is not None:
+        validate_fixes(fixes)
     if hashlib.sha256(exe.read_bytes()).hexdigest() != SUPPORTED_SHA256:
         raise ValueError('Unsupported KWIPv3.exe build. Its SHA-256 does not match the verified version; launch cancelled.')
 
@@ -67,6 +139,12 @@ def launch_game(executable, values, dry_run=False):
     k.TerminateProcess.argtypes, k.TerminateProcess.restype = [W.HANDLE, W.UINT], W.BOOL
     k.WaitForSingleObject.argtypes = [W.HANDLE, W.DWORD]
     k.CloseHandle.argtypes = [W.HANDLE]
+    k.VirtualProtectEx.argtypes = [W.HANDLE, C.c_void_p, C.c_size_t, W.DWORD, C.POINTER(W.DWORD)]
+    k.VirtualProtectEx.restype = W.BOOL
+    k.VirtualAllocEx.argtypes = [W.HANDLE, C.c_void_p, C.c_size_t, W.DWORD, W.DWORD]
+    k.VirtualAllocEx.restype = C.c_void_p
+    k.FlushInstructionCache.argtypes = [W.HANDLE, C.c_void_p, C.c_size_t]
+    k.FlushInstructionCache.restype = W.BOOL
     si, pi = STARTUPINFO(), PROCESS_INFORMATION()
     si.cb = C.sizeof(si)
     # GUI executable: no command processor, shell, or console is involved.
@@ -82,16 +160,38 @@ def launch_game(executable, values, dry_run=False):
             return buffer.raw
 
         def write(address, data):
-            count = C.c_size_t()
-            if not k.WriteProcessMemory(pi.hProcess, address, C.create_string_buffer(data), len(data), C.byref(count)) or count.value != len(data):
+            count, old = C.c_size_t(), W.DWORD()
+            if not k.VirtualProtectEx(pi.hProcess, address, len(data), 0x04, C.byref(old)):
+                raise C.WinError(C.get_last_error())
+            try:
+                if not k.WriteProcessMemory(pi.hProcess, address, C.create_string_buffer(data), len(data), C.byref(count)) or count.value != len(data):
+                    raise C.WinError(C.get_last_error())
+            finally:
+                ignored = W.DWORD()
+                if not k.VirtualProtectEx(pi.hProcess, address, len(data), old.value, C.byref(ignored)):
+                    raise C.WinError(C.get_last_error())
+            if not k.FlushInstructionCache(pi.hProcess, address, len(data)):
                 raise C.WinError(C.get_last_error())
 
-        changed = apply_limits(read, write, values)
+        def allocate(size):
+            address = k.VirtualAllocEx(pi.hProcess, None, size, 0x3000, 0x04)
+            if not address:
+                raise C.WinError(C.get_last_error())
+            return address
+
+        def seal(address, size):
+            old = W.DWORD()
+            if not k.VirtualProtectEx(pi.hProcess, address, size, 0x20, C.byref(old)):
+                raise C.WinError(C.get_last_error())
+            if not k.FlushInstructionCache(pi.hProcess, address, size):
+                raise C.WinError(C.get_last_error())
+
+        changed, override_count = apply_configuration(read, write, values, overrides, allocate, seal, unlocks, projectiles, fixes)
         if not dry_run:
             if k.ResumeThread(pi.hThread) == 0xffffffff:
                 raise C.WinError(C.get_last_error())
             resumed = True
-        return {'pid': pi.dwProcessId, 'patched': changed, 'dry_run': dry_run}
+        return {'pid': pi.dwProcessId, 'patched': changed, 'overrides': override_count, 'dry_run': dry_run}
     finally:
         # On any failure, only the child created above is terminated.
         if not resumed:

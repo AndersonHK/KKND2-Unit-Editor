@@ -68,10 +68,18 @@ def validate(values):
 
 
 class LimitsConfig:
+    specs = BUILDINGS
+    schema = 'kknd2-editor-building-limits'
+    version = 1
+    value_key = 'limits'
+    title = 'Building limits'
+    temporary_prefix = '.limits-'
+    validate = staticmethod(validate)
+
     def __init__(self, path):
         self.path = Path(path)
         self.raw = self.path.read_bytes() if self.path.exists() else None
-        self.defaults = {key: spec['default'] for key, spec in BUILDINGS.items()}
+        self.defaults = {key: spec['default'] for key, spec in self.specs.items()}
         self.values = dict(self.defaults)
         if self.raw is not None:
             def unique(pairs):
@@ -82,14 +90,20 @@ class LimitsConfig:
                     result[key] = value
                 return result
             doc = json.loads(self.raw.decode('utf-8'), object_pairs_hook=unique)
-            if not isinstance(doc, dict) or set(doc) != {'schema', 'version', 'limits'} or doc['schema'] != 'kknd2-editor-building-limits' or type(doc['version']) is not int or doc['version'] != 1:
-                raise ValueError("Unsupported building limits schema/version.")
-            self.values = validate(doc['limits'])
+            if not isinstance(doc, dict) or set(doc) != {'schema', 'version', self.value_key} or doc['schema'] != self.schema or type(doc['version']) is not int :
+                raise ValueError(f"Unsupported {self.title.lower()} schema/version.")
+            self.values = self.decode_values(doc[self.value_key], doc['version'])
+        self.needs_migration = self.raw is not None and doc['version'] != self.version
         self.saved = dict(self.values)
         self.undo_stack, self.redo_stack = [], []
 
+    def decode_values(self, values, version):
+        if version != self.version:
+            raise ValueError(f'Unsupported {self.title.lower()} schema/version.')
+        return self.validate(values)
+
     def apply(self, values):
-        values = validate(values)
+        values = self.validate(values)
         if values != self.values:
             self.undo_stack.append(dict(self.values))
             self.values = values
@@ -108,13 +122,13 @@ class LimitsConfig:
     def save(self):
         current = self.path.read_bytes() if self.path.exists() else None
         if current != self.raw:
-            raise OSError("Building limits changed outside the editor. Reopen the editor before saving.")
-        if self.raw is not None and self.values == self.saved:
+            raise OSError(f"{self.title} changed outside the editor. Reopen the file before saving.")
+        if self.raw is not None and self.values == self.saved and not self.needs_migration:
             return
-        raw = (json.dumps({'schema': 'kknd2-editor-building-limits', 'version': 1,
-                          'limits': validate(self.values)}, indent=2) + '\n').encode('utf-8')
+        raw = (json.dumps({'schema': self.schema, 'version': self.version,
+                          self.value_key: self.validate(self.values)}, indent=2) + '\n').encode('utf-8')
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        fd, name = tempfile.mkstemp(prefix='.limits-', suffix='.tmp', dir=self.path.parent)
+        fd, name = tempfile.mkstemp(prefix=self.temporary_prefix, suffix='.tmp', dir=self.path.parent)
         try:
             with os.fdopen(fd, 'wb') as stream:
                 stream.write(raw)
@@ -122,8 +136,9 @@ class LimitsConfig:
                 os.fsync(stream.fileno())
             os.replace(name, self.path)
             if self.path.read_bytes() != raw:
-                raise OSError("Building limits save verification failed.")
+                raise OSError(f"{self.title} save verification failed.")
         finally:
             if os.path.exists(name):
                 os.unlink(name)
         self.raw, self.saved = raw, dict(self.values)
+        self.needs_migration = False

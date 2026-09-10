@@ -27,10 +27,12 @@ class ResponsiveLayoutTests(TestCase):
                             self.assertEqual(label.grid_info()['pady'], app.px(7))
 
                         natural = app.stats.content.winfo_reqwidth()
+                        # Six tabs require more horizontal space than the original two.
+                        controls = sum(b.winfo_reqwidth() for b in app.toolbar.buttons + app.notebook.bar.buttons)
                         previous_width = previous_saved_x = None
                         # Check intermediate sizes, not just the final drag position.
                         for extra in (200, 300, 400, 250):
-                            app.geometry(f'{natural + app.px(430 + extra)}x{app.px(800)}')
+                            app.geometry(f'{max(natural + app.px(430 + extra), controls + app.px(100 + extra))}x{app.px(800)}')
                             app.update()
                             canvas = app.stats.canvas
                             width = canvas.winfo_width()

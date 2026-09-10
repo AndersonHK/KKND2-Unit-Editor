@@ -2,12 +2,21 @@
 *.cfg
 *.cfg.*
 !examples/building_limits.example.cfg
+!examples/overrides.example.cfg
+!examples/tech_unlocks.example.cfg
+!examples/projectiles.example.cfg
+/projectiles.cfg
+/overrides.cfg
+/tech_unlocks.cfg
 *.bak
 backups/
 UCONFIG/
 editor-backup-*/
 .kknd2-*.tmp
 .limits-*.tmp
+.overrides-*.tmp
+.unlocks-*.tmp
+.projectiles-*.tmp
 *.log
 
 # Python caches, environments, packaging, and test artifacts.
@@ -32,3 +41,16 @@ Desktop.ini
 .DS_Store
 *.exe
 *.dll
+
+# Personal behavior toggles and native build intermediates.
+/fixes.cfg
+!examples/fixes.example.cfg
+.fixes-*.tmp
+*.obj
+*.lib
+*.exp
+*.pdb
+
+# Local standalone release tooling; the shareable ZIP is tracked.
+.venv-build/
+*.spec

@@ -17,7 +17,9 @@ class SafetyTests(TestCase):
         self.doc = editor.Config(self.raw)
 
 
-    def test_native_limits_for_every_field(self):
+    def test_editor_limits_for_every_field(self):
+        self.assertEqual(editor.FIELD_MAXIMUMS[0], 10000)
+        self.assertEqual(editor.FIELD_MAXIMUMS[11], 600)
         for col, maximum in enumerate(editor.FIELD_MAXIMUMS):
             row = next(r for r, u in enumerate(self.doc.units) if u.cells[col].original != "-")
             self.doc.apply({(row, col): str(maximum)})
@@ -69,7 +71,7 @@ class SafetyTests(TestCase):
 
     def test_wider_and_narrower_numbers_preserve_offsets(self):
         cell = self.doc.units[0].cells[0]
-        for value in ("0", "5000", "1234"):
+        for value in ("0", "10000", "1234"):
             self.doc.apply({(0, 0): value})
             out = self.doc.serialize()
             self.assertEqual(len(out), len(self.raw))

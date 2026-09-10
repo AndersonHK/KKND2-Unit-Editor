@@ -1,1 +1,3 @@
-"""Lossless KKND2 unit editor and optional KWIPv3 building limits launcher."""
+"""Lossless KKND2 editor and optional KWIPv3 gameplay extensions."""
+
+__version__ = '0.2.0'

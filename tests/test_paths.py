@@ -6,6 +6,12 @@ from kknd2_editor import paths
 
 
 class PortablePathsTests(TestCase):
+    def test_frozen_settings_root_is_executable_folder(self):
+        with TemporaryDirectory() as temporary:
+            executable = Path(temporary)/'Editor folder'/'KKND2 Unit Editor.exe'
+            with mock.patch.object(paths.sys, 'frozen', True, create=True), mock.patch.object(paths.sys, 'executable', str(executable)):
+                self.assertEqual(paths.application_root(), executable.parent.resolve())
+
     def test_checkout_environment_and_selected_game_precedence(self):
         with TemporaryDirectory() as temporary:
             root = Path(temporary)

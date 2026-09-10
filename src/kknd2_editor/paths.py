@@ -1,8 +1,16 @@
 """Portable checkout paths; no installation paths or personal settings in source."""
 import os
+import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+def application_root():
+    """Keep personal settings beside the EXE, never in its extraction folder."""
+    if getattr(sys, 'frozen', False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parents[2]
+
+
+PROJECT_ROOT = application_root()
 
 
 def find_game_dir(config_folder=None):
@@ -26,3 +34,19 @@ def default_folder(game_dir=None):
 
 def default_limits_path():
     return PROJECT_ROOT / 'building_limits.cfg'
+
+
+def default_overrides_path():
+    return PROJECT_ROOT / 'overrides.cfg'
+
+
+def default_unlocks_path():
+    return PROJECT_ROOT / 'tech_unlocks.cfg'
+
+
+def default_projectiles_path():
+    return PROJECT_ROOT / 'projectiles.cfg'
+
+
+def default_fixes_path():
+    return PROJECT_ROOT / 'fixes.cfg'

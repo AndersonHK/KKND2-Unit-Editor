@@ -10,11 +10,19 @@ import tkinter as tk
 import threading
 import queue
 from .limits_ui import LimitsPage
+from .overrides_ui import OverridesPage
+from .projectiles_ui import ProjectilesPage
+from .projectiles import FIELDS as PROJECTILE_FIELDS
+from .unlocks_ui import UnlocksPage
+from .fixes_ui import FixesPage
+from .fixes import FIXES
+from . import __version__
+from .overrides import OVERRIDES
 from .game_launcher import launch_game
 from tkinter import ttk, filedialog, messagebox
 from tkinter import font as tkfont
 
-from .paths import default_folder, default_limits_path, find_game_dir
+from .paths import default_folder, default_limits_path, default_overrides_path, default_unlocks_path, default_projectiles_path, default_fixes_path, find_game_dir
 FIELDS = ("Cost", "Build-Time", "Hitpoints", "View-Range", "Speed", "Armour",
           "Accuracy", "Weapon-Range", "Min-Range", "Bullet-Count", "Fire-Delay",
           "Reload-Time", "InfantryDamage", "VehicleDamage", "BeastDamage",
@@ -22,10 +30,11 @@ FIELDS = ("Cost", "Build-Time", "Hitpoints", "View-Range", "Speed", "Armour",
 FACTIONS = {"SURV": "Survivors", "MUTE": "Evolved", "ROBOT": "Series 9"}
 
 
-# Native KKND2 editor limits, verified against its metadata table and UI.
-# These are supported editor limits, not claims about integer storage capacity.
-FIELD_MAXIMUMS = (5000, 600, 10000, 41, 260, 255, 260, 510, 256,
-                  250, 300, 250, 4000, 4000, 4000, 4000, 4000)
+# Native editor limits, except cost extended to 10,000 and reload to 600.
+# Reload uses 32-bit definitions and narrower signed 16-bit runtime timers.
+# These are editor bounds, not claims about maximum engine capacity.
+FIELD_MAXIMUMS = (10000, 600, 10000, 41, 260, 255, 260, 510, 256,
+                  250, 300, 600, 4000, 4000, 4000, 4000, 4000)
 FIELD_UNITS = (
     "resource units", "seconds (normal speed)", "HP",
     "tiles", "raw movement rate", "raw armour rating",
@@ -247,7 +256,7 @@ class Config:
         if value != "-" and value != cell.original:
             maximum = FIELD_MAXIMUMS[column]
             if int(value) > maximum:
-                raise ValueError(f"{FIELDS[column]}: maximum is {maximum:,} (in-game editor limit).")
+                raise ValueError(f"{FIELDS[column]}: maximum is {maximum:,} (editor limit).")
             if column == 1 and int(value) < 1:
                 raise ValueError("Build-Time: minimum is 1 second.")
         return value
@@ -453,14 +462,13 @@ class EditorTabs(ttk.Frame):
         super().__init__(parent)
         self.columnconfigure(0, weight=1)
         self.rowconfigure(1, weight=1)
-        self.bar = ttk.Frame(tab_parent)
+        self.bar = FlowBar(tab_parent, gap=5, button_style='EditorTab.TButton')
         self.bar.grid(row=0, column=1, sticky='w')
         self.pages = {}
         self.selected = None
 
     def add(self, page, text):
-        button = ttk.Button(self.bar, text=text.strip(), style='EditorTab.TButton', width=0, command=lambda: self.select(page))
-        button.pack(side='left', padx=(0, 5), pady=(0, 5))
+        button = self.bar.add(text.strip(), lambda: self.select(page))
         self.pages[str(page)] = (page, button)
         if self.selected is None:
             self.select(page)
@@ -594,13 +602,18 @@ def enable_dpi_awareness():
 
 
 class Editor(tk.Tk):
-    def __init__(self, folder=None, initial=None, tk_scaling=None, limits_path=None, game_dir=None):
+    def __init__(self, folder=None, initial=None, tk_scaling=None, limits_path=None, game_dir=None, overrides_path=None, unlocks_path=None, projectiles_path=None, fixes_path=None):
         super().__init__()
         self.withdraw()
+        self.title(f"KKND2 Unit Editor {__version__}")
         if tk_scaling is not None:  # Deterministic DPI regression testing.
             self.tk.call("tk", "scaling", tk_scaling)
         self.scale = float(self.tk.call("tk", "scaling")) / (96 / 72)
         self.limits_path = Path(limits_path) if limits_path else default_limits_path()
+        self.overrides_path = Path(overrides_path) if overrides_path else default_overrides_path()
+        self.unlocks_path = Path(unlocks_path) if unlocks_path else default_unlocks_path()
+        self.fixes_path = Path(fixes_path) if fixes_path else default_fixes_path()
+        self.projectiles_path = Path(projectiles_path) if projectiles_path else default_projectiles_path()
         self._resize_pending = False
         self._last_main_width = None
         self._wrap_width = None
@@ -811,11 +824,22 @@ class Editor(tk.Tk):
         self.footer.bind("<Configure>", self.wrap_status)
         self.limits_page = LimitsPage(self, self.notebook, self.limits_path, UNIT_NAMES, ScrollPanel, FlowBar)
         self.notebook.add(self.limits_page, text="  Building limits  ")
+        self.overrides_page = OverridesPage(self, self.notebook, self.overrides_path,
+                                            {k: s['name'] for k, s in OVERRIDES.items()}, ScrollPanel, FlowBar)
+        self.notebook.add(self.overrides_page, text="  Overrides  ")
+        self.unlocks_page = UnlocksPage(self, self.notebook, self.unlocks_path, UNIT_NAMES, ScrollPanel, FlowBar)
+        self.notebook.add(self.unlocks_page, text="  Tech unlocks  ")
+        self.projectiles_page = ProjectilesPage(self, self.notebook, self.projectiles_path,
+                                                {k: s['name'] for k, s in PROJECTILE_FIELDS.items()}, ScrollPanel, FlowBar)
+        self.notebook.add(self.projectiles_page, text="  Projectiles  ")
+        self.fixes_page = FixesPage(self, self.notebook, self.fixes_path,
+                                    {k: s['name'] for k, s in FIXES.items()}, ScrollPanel, FlowBar)
+        self.notebook.add(self.fixes_page, text="  Fixes  ")
+        self.settings_pages = (self.limits_page, self.overrides_page, self.unlocks_page, self.projectiles_page, self.fixes_page)
         self.notebook.bind("<<NotebookTabChanged>>", self.tab_changed)
         self.command_row.bind('<Configure>', lambda _: self.arrange_commands())
         self.tab_changed()
-        if self.limits_page.error:
-            self.launch_button.configure(state="disabled")
+        self.update_launch_state()
 
     def schedule_reflow(self, event=None):
         if event is not None and event.width == self._last_main_width:
@@ -834,6 +858,8 @@ class Editor(tk.Tk):
             self.left.grid_forget()
             self.right.grid_forget()
             if mode == "side":
+                self.command_row.grid_configure(pady=(0, self.px(8)))
+                self.file_box.grid_configure(pady=(self.px(4), self.px(10)))
                 self.app_heading.grid()
                 self.identifier_label.grid()
                 self.file_caption.grid()
@@ -845,6 +871,10 @@ class Editor(tk.Tk):
                 self.left.grid(row=1, column=0, sticky="nsew", padx=(0, self.px(14)))
                 self.right.grid(row=1, column=1, sticky="nsew")
             else:
+                # Leave room for the wrapped tab strip on very small, high-DPI
+                # windows. Stat rows and button padding retain their full size.
+                self.command_row.grid_configure(pady=(0, self.px(2)))
+                self.file_box.grid_configure(pady=(0, self.px(2)))
                 self.app_heading.grid_remove()
                 self.identifier_label.grid_remove()
                 self.file_caption.grid_remove()
@@ -852,7 +882,7 @@ class Editor(tk.Tk):
                 self.main_panel.columnconfigure(1, weight=0)
                 self.main_panel.rowconfigure(0, weight=0)
                 self.main_panel.rowconfigure(1, weight=1)
-                self.page_tabs.grid(row=0, column=0, sticky="ew", pady=(0, self.px(6)))
+                self.page_tabs.grid(row=0, column=0, sticky="ew", pady=(0, self.px(2)))
                 self.switch_page(self.compact_page)
             self.update_status()
     def wrap_heading(self, event):
@@ -1040,7 +1070,7 @@ class Editor(tk.Tk):
             return
         dirty = bool(self.config_doc.changes) or self.form_dirty()
         count = sum(self.different(i) for i in range(len(self.config_doc.units)))
-        self.title(("* " if dirty else "") + f"{self.config_doc.name} - KKND2 Unit Editor")
+        self.title(("* " if dirty else "") + f"{self.config_doc.name} - KKND2 Unit Editor {__version__}")
         self.status.set(f"{self.path.name} | {count} units differ from defaults | " + ("Unsaved changes" if dirty else "All changes saved"))
         if self.layout_mode == "tabs":
             self.status.set(f"{self.path.name} | " + ("Unsaved" if dirty else "Saved"))
@@ -1163,10 +1193,12 @@ class Editor(tk.Tk):
             return
         if not self.can_leave():
             return
-        if self.limits_page.dirty():
-            choice = messagebox.askyesnocancel("Unsaved building limits", "Save building limits before closing?", parent=self)
-            if choice is None or (choice and not self.limits_page.save()):
-                return
+        for page in self.settings_pages:
+            if page.dirty():
+                choice = messagebox.askyesnocancel('Unsaved ' + page.title.lower(),
+                    f'Save {page.title.lower()} before closing?', parent=self)
+                if choice is None or (choice and not page.save()):
+                    return
         self.destroy()
 
     def wrap_status(self, event):
@@ -1176,12 +1208,17 @@ class Editor(tk.Tk):
             self.status_label.configure(wraplength=width)
 
     def active_action(self, action):
-        page = self.limits_page if self.notebook.select() == str(self.limits_page) else self
+        page = next((p for p in self.settings_pages if self.notebook.select() == str(p)), self)
         return getattr(page, action)()
 
+    def update_launch_state(self):
+        blocked = self.launching or any(page.error for page in self.settings_pages)
+        self.launch_button.configure(state='disabled' if blocked else 'normal')
+
     def tab_changed(self, _event=None):
-        if hasattr(self, 'limits_page') and self.notebook.select() == str(self.limits_page):
-            self.status.set("Building limits | Launch saves both tabs")
+        page = next((p for p in getattr(self, 'settings_pages', ()) if self.notebook.select() == str(p)), None)
+        if page:
+            self.status.set(page.title + ' | Launch saves all tabs')
         else:
             self.update_status()
         self.arrange_commands()
@@ -1191,22 +1228,25 @@ class Editor(tk.Tk):
             return
         bar = self.toolbar
         wanted = sum(button.winfo_reqwidth() for button in bar.buttons) + bar.gap * (len(bar.buttons) - 1) if bar else 0
-        tabs_width = self.notebook.bar.winfo_reqwidth()
-        wide = self.command_row.winfo_width() >= wanted + tabs_width + self.px(60)
-        signature = (wide, wanted)
+        tabs = self.notebook.bar
+        tabs_width = sum(b.winfo_reqwidth() for b in tabs.buttons) + tabs.gap * (len(tabs.buttons) - 1)
+        available = self.command_row.winfo_width()
+        wide = available >= wanted + tabs_width + self.px(12)
+        gap = min(self.px(60), max(self.px(12), available - wanted - tabs_width))
+        signature = (wide, wanted, gap)
         if signature == self.command_layout:
             return
         self.command_layout = signature
         self.command_row.columnconfigure(0, weight=0 if wide else 1, minsize=wanted if wide else 0)
         self.command_row.columnconfigure(1, weight=1 if wide else 0)
         self.notebook.bar.grid(row=0 if wide else 1, column=1 if wide else 0,
-                               columnspan=1 if wide else 2, sticky='w',
-                               padx=(self.px(60) if wide else 0, 0), pady=(0 if wide else self.px(6), 0))
+                               columnspan=1 if wide else 2, sticky='ew',
+                               padx=(gap if wide else 0, 0), pady=(0 if wide else self.px(6), 0))
 
     def launch(self):
-        if self.launching or not self.commit_form() or not self.limits_page.commit():
+        if self.launching or not self.commit_form() or not all(page.commit() for page in self.settings_pages):
             return
-        if not self.save() or not self.limits_page.save():
+        if not self.save() or not all(page.save() for page in self.settings_pages):
             return
         game_dir = self.game_dir or find_game_dir(self.folder)
         if game_dir is None:
@@ -1216,13 +1256,17 @@ class Editor(tk.Tk):
             return
         executable = game_dir / 'KWIPv3.exe'
         values = dict(self.limits_page.doc.values)
+        overrides = dict(self.overrides_page.doc.values)
+        unlocks = dict(self.unlocks_page.doc.values)
+        projectiles = dict(self.projectiles_page.doc.values)
+        fixes = dict(self.fixes_page.doc.values)
         self.launching = True
         self.launch_button.configure(state='disabled')
-        self.status.set('Starting KWIPv3 with your building limits…')
+        self.status.set('Starting KWIPv3 with your settings…')
         results = queue.Queue()
         def worker():
             try:
-                results.put((launch_game(executable, values), None))
+                results.put((launch_game(executable, values, overrides=overrides, unlocks=unlocks, projectiles=projectiles, fixes=fixes), None))
             except Exception as exc:
                 results.put((None, str(exc)))
         threading.Thread(target=worker, daemon=True).start()
@@ -1233,12 +1277,12 @@ class Editor(tk.Tk):
                 self.after(50, check)
                 return
             self.launching = False
-            self.launch_button.configure(state='normal')
+            self.update_launch_state()
             if error:
                 self.status.set('Game launch failed.')
                 messagebox.showerror('Cannot launch game', error, parent=self)
             else:
-                self.status.set(f"KWIPv3 launched: {result['patched']} building limits applied. Select {self.path.name} in the multiplayer Unit Config menu.")
+                self.status.set(f"KWIPv3 launched: building limits, overrides, tech unlocks, projectiles and fixes applied. Select {self.path.name} in the multiplayer Unit Config menu.")
         self.after(50, check)
 
     def focus_search(self):
@@ -1253,6 +1297,11 @@ def main():
     parser.add_argument("--folder", type=Path, help="Folder containing UCONFIG files")
     parser.add_argument("--game-dir", type=Path, help="Game folder containing KWIPv3.exe and UCONFIG")
     parser.add_argument("--limits-file", type=Path, help="Building limits JSON .cfg (default: checkout root)")
+    parser.add_argument("--overrides-file", type=Path, help="Raw engine overrides JSON .cfg (default: checkout root)")
+    parser.add_argument("--unlocks-file", type=Path, help="Tech unlocks JSON .cfg (default: checkout root)")
+    parser.add_argument("--projectiles-file", type=Path, help="Projectile settings JSON .cfg (default: checkout root)")
+    parser.add_argument("--fixes-file", type=Path, help="Behavior fixes JSON .cfg (default: checkout root)")
+    parser.add_argument("--version", action="version", version="KKND2 Unit Editor " + __version__)
     args = parser.parse_args()
     enable_dpi_awareness()
-    Editor(args.folder, args.file, limits_path=args.limits_file, game_dir=args.game_dir).mainloop()
+    Editor(args.folder, args.file, limits_path=args.limits_file, game_dir=args.game_dir, overrides_path=args.overrides_file, unlocks_path=args.unlocks_file, projectiles_path=args.projectiles_file, fixes_path=args.fixes_file).mainloop()

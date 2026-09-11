@@ -10,7 +10,10 @@ from . import overrides_patch
 from .overrides import validate as validate_overrides
 from . import tech_unlocks, projectiles_patch, fixes_patch
 from .fixes import validate as validate_fixes
+from .fixes import FIXES
 from .projectiles import validate as validate_projectiles
+from .campaign import command_line
+from . import unit_extensions
 
 SUPPORTED_SHA256 = 'ebc91ca929e69c1529de9230d28ddb5c4b1534f13074458dd03b805677817d44'
 
@@ -34,7 +37,7 @@ def apply_limits(read, write, values):
     return len(plan)
 
 
-def apply_configuration(read, write, values, overrides, allocate, seal, unlocks=None, projectiles=None, fixes=None):
+def apply_configuration(read, write, values, overrides, allocate, seal, unlocks=None, projectiles=None, fixes=None, extensions=None):
     """Validate every feature's original sites before any process memory write."""
     validate(values)
     for spec in BUILDINGS.values():
@@ -42,15 +45,17 @@ def apply_configuration(read, write, values, overrides, allocate, seal, unlocks=
             raise ValueError('KWIPv3 building data does not match the supported build.')
     plan = patch_plan(values)
     building_count = len(plan)
+    if extensions is not None:
+        plan.extend(unit_extensions.patch_plan(read, extensions))
     if unlocks is not None:
         tech_unlocks.validate(unlocks)
         tech_unlocks.validate_memory(read)
     if projectiles is not None:
         validate_projectiles(projectiles)
         projectiles_patch.validate_memory(read)
-    if fixes is not None:
-        validate_fixes(fixes)
-        fixes_patch.validate_memory(read, fixes)
+    fixes = fixes if fixes is not None else {k: s['default'] for k, s in FIXES.items()}
+    validate_fixes(fixes)
+    fixes_patch.validate_memory(read, fixes, values)
     if overrides is not None:
         validate_overrides(overrides)
         overrides_patch.validate_memory(read)
@@ -84,8 +89,7 @@ def apply_configuration(read, write, values, overrides, allocate, seal, unlocks=
                 raise OSError('Projectile helper verification failed.')
             seal(address, len(blob))
         plan.extend(projectile_plan)
-    if fixes is not None:
-        plan.extend(fixes_patch.prepare(read, write, allocate, seal, fixes))
+    plan.extend(fixes_patch.prepare(read, write, allocate, seal, fixes, values))
     for address, before, after in plan:
         write(address, after)
         if read(address, len(after)) != after:
@@ -93,7 +97,7 @@ def apply_configuration(read, write, values, overrides, allocate, seal, unlocks=
     return building_count, len(plan) - building_count
 
 
-def launch_game(executable, values, dry_run=False, overrides=None, unlocks=None, projectiles=None, fixes=None):
+def launch_game(executable, values, dry_run=False, overrides=None, unlocks=None, projectiles=None, fixes=None, campaign_config=None, extensions=None):
     """Create our own suspended process, verify/patch, and only then resume it.
 
     dry_run verifies a real suspended process and terminates it without running
@@ -102,6 +106,7 @@ def launch_game(executable, values, dry_run=False, overrides=None, unlocks=None,
     if os.name != 'nt':
         raise OSError('The KWIPv3 launcher requires Windows.')
     exe = Path(executable).resolve()
+    command = command_line(exe, campaign_config)
     validate(values)
     if overrides is not None:
         validate_overrides(overrides)
@@ -111,6 +116,8 @@ def launch_game(executable, values, dry_run=False, overrides=None, unlocks=None,
         validate_projectiles(projectiles)
     if fixes is not None:
         validate_fixes(fixes)
+    if extensions is not None:
+        unit_extensions.validate(extensions)
     if hashlib.sha256(exe.read_bytes()).hexdigest() != SUPPORTED_SHA256:
         raise ValueError('Unsupported KWIPv3.exe build. Its SHA-256 does not match the verified version; launch cancelled.')
 
@@ -148,7 +155,7 @@ def launch_game(executable, values, dry_run=False, overrides=None, unlocks=None,
     si, pi = STARTUPINFO(), PROCESS_INFORMATION()
     si.cb = C.sizeof(si)
     # GUI executable: no command processor, shell, or console is involved.
-    if not k.CreateProcessW(str(exe), C.create_unicode_buffer('"' + str(exe) + '"'),
+    if not k.CreateProcessW(str(exe), C.create_unicode_buffer(command),
                             None, None, False, 0x00000004, None, str(exe.parent), C.byref(si), C.byref(pi)):
         raise C.WinError(C.get_last_error())
     resumed = False
@@ -186,7 +193,7 @@ def launch_game(executable, values, dry_run=False, overrides=None, unlocks=None,
             if not k.FlushInstructionCache(pi.hProcess, address, size):
                 raise C.WinError(C.get_last_error())
 
-        changed, override_count = apply_configuration(read, write, values, overrides, allocate, seal, unlocks, projectiles, fixes)
+        changed, override_count = apply_configuration(read, write, values, overrides, allocate, seal, unlocks, projectiles, fixes, extensions)
         if not dry_run:
             if k.ResumeThread(pi.hThread) == 0xffffffff:
                 raise C.WinError(C.get_last_error())

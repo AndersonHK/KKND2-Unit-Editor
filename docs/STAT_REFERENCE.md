@@ -13,12 +13,15 @@ The maximums below match the reference English KKND2 native unit editor, except 
 | Accuracy | 260 | Raw accuracy rating; not a 0–100 percentage |
 | Weapon range | 510 | World pixels; 32 pixels = 1 tile |
 | Minimum range | 256 | World pixels; 32 pixels = 1 tile |
-| Bullet count | 250 | Burst count; zero has weapon-specific behavior |
+| Bullet count | 250 | Native weapon count; not the separate turret burst count |
+| Burst count (extended) | 127 | Shots per supported vehicle turret burst; minimum 1, saved in a companion CFG |
 | Fire delay | 300 | Nominal 1/60-second game-time ticks |
 | Reload time | 600 | Nominal 1/60-second game-time ticks |
 | Each of the five damage fields | 4000 | Base damage before game combat modifiers |
 
 For example, weapon range 320 means 10 tiles; view range 12 means 12 tiles. Delay 60 corresponds nominally to 1 second at normal speed. Delay values are not milliseconds or rendered frame counts. Actual timing also depends on integer frame rounding, animations, veterancy, game speed, and executable patches. The editor does not promise stopwatch timing for KWIPv3 or other altered executables.
+
+The new Burst Count row is outside the original 17-column schema. See [extended unit settings](UNIT_EXTENSIONS.md) for stock turret counts, supported units, launch behavior, and the signed-byte reason for the 127 cap.
 
 ## Evidence from the reference original KKND2.exe
 

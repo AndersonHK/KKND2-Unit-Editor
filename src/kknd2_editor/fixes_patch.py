@@ -8,26 +8,35 @@ import json
 from pathlib import Path
 import struct
 from .fixes import validate
+from .building_limits import validate as validate_limits
 
 HOOKS = {
     'select_near': (0x4a1893, bytes.fromhex('55 8b ec 81 ec 8c 00 00 00')),
     'select_wide': (0x4a2039, bytes.fromhex('55 8b ec 83 ec 74')),
     'validate_target': (0x4a265e, bytes.fromhex('55 8b ec 81 ec 8c 00 00 00')),
     'shift_placement': (0x466d01, bytes.fromhex('88 15 08 55 56 00')),
+    'ai_solar_limit': (0x4277a6, bytes.fromhex('83 b8 94 00 00 00 04')),
+    'ai_thermal_limit': (0x4277f4, bytes.fromhex('83 b8 90 00 00 00 04')),
 }
+CALL_HOOKS = {'shift_placement', 'ai_solar_limit', 'ai_thermal_limit'}
 
 
-def selected_hooks(values):
+def selected_hooks(values, limits=None):
     validate(values)
     names = []
     if values['damage_priority']: names.extend(('select_near', 'select_wide'))
     if values['damage_priority'] or values['zero_damage_filter']: names.append('validate_target')
     if values['shift_build']: names.append('shift_placement')
+    if limits is not None:
+        validate_limits(limits)
+        for suffix, hook in (('COLLECTOR', 'ai_solar_limit'), ('CONVERTER', 'ai_thermal_limit')):
+            if any(limits[f'UNIT_{faction}_{suffix}'] != 4 for faction in ('SURV', 'MUTE', 'ROBOT')):
+                names.append(hook)
     return {key: HOOKS[key] for key in names}
 
 
-def validate_memory(read, values):
-    for name, (address, before) in selected_hooks(values).items():
+def validate_memory(read, values, limits=None):
+    for name, (address, before) in selected_hooks(values, limits).items():
         if read(address, len(before)) != before:
             raise ValueError(f'KWIPv3 {name} code does not match the supported build.')
 
@@ -43,9 +52,9 @@ def branch(address, destination, size, call=False):
     return bytes([0xe8 if call else 0xe9]) + struct.pack('<I', (destination-address-5) & 0xffffffff) + b'\x90'*(size-5)
 
 
-def prepare(read, write, allocate, seal, values):
+def prepare(read, write, allocate, seal, values, limits=None):
     """Write/verify helpers first; return hooks to install after all validation."""
-    hooks = selected_hooks(values)
+    hooks = selected_hooks(values, limits)
     if not hooks: return []
     payload = load_payload()
     size = payload['size']
@@ -80,7 +89,7 @@ def prepare(read, write, allocate, seal, values):
             image[cursor:cursor+len(code)] = code
             set_export(originals[name], address+cursor)
             cursor += 32
-        plan.append((site, before, branch(site, address+exports[name], len(before), name == 'shift_placement')))
+        plan.append((site, before, branch(site, address+exports[name], len(before), name in CALL_HOOKS)))
     write(address, bytes(image))
     if read(address, len(image)) != image: raise OSError('Native fixes verification failed.')
     for section in payload['sections']:

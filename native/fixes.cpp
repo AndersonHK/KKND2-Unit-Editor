@@ -78,12 +78,59 @@ static int select_target(Selector original, Unit* unit, Target* target) {
 EXPORT int __fastcall select_near(Unit* unit, Target* target) { return select_target(original_near, unit, target); }
 EXPORT int __fastcall select_wide(Unit* unit, Target* target) { return select_target(original_wide, unit, target); }
 
+static int __fastcall income_building_limit(const Byte* ai, Word slot) {
+    const Byte* faction = field<const Byte*>(ai, 8);
+    const Word building = field<Word>(faction, slot);
+    const Byte* definition = reinterpret_cast<const Byte*>(0x52bed8 + building * 0x110);
+    const Byte* data = field<const Byte*>(definition, 0xe0);
+    return field<unsigned short>(data, 0x10);
+}
+
+// Replace only the AI planner's two literal-four comparisons. Each faction
+// resolves its own building definition; budgets, priorities and tech stay native.
+EXPORT __declspec(naked) void ai_solar_limit() {
+    __asm {
+        pushad
+        mov ecx, eax
+        mov edx, 014h
+        call income_building_limit
+        mov edx, [esp + 28]
+        cmp dword ptr [edx + 094h], eax
+        popad
+        ret
+    }
+}
+EXPORT __declspec(naked) void ai_thermal_limit() {
+    __asm {
+        pushad
+        mov ecx, eax
+        mov edx, 010h
+        call income_building_limit
+        mov edx, [esp + 28]
+        cmp dword ptr [edx + 090h], eax
+        popad
+        ret
+    }
+}
+
 static int __cdecl continue_placement(Byte* frame) {
     if (!(*reinterpret_cast<volatile Word*>(kwip::modifiers) & kwip::shift)) return 0;
+    const Byte* controller = field<const Byte*>(frame - kwip::placement_controller, 0);
+    const unsigned short building = field<unsigned short>(controller, kwip::selected_building);
+    typedef int (__fastcall *CheckLimit)(unsigned short, int);
+    // Normal success cleanup (40A9F6) calls this with include-new-placement=1.
+    // The placement loop itself only tests the menu, whose icon is otherwise
+    // left stale. Run the same count+1 check after EVERY accepted Shift click.
+    // It reads the patched per-building cap and removes the icon at the cap.
+    if (reinterpret_cast<CheckLimit>(kwip::check_building_limit)(building, 1)) {
+        // The native check has removed/freed the selected menu item. Normal
+        // cleanup must not call its callback or try removing it a second time.
+        *reinterpret_cast<Word*>(kwip::active_build_item) = 0;
+        return 0; // Keep success=1 and follow normal placement cleanup.
+    }
     *reinterpret_cast<int*>(frame + kwip::placement_success) = 0;
     *reinterpret_cast<volatile Word*>(kwip::left_pressed) &= ~0x10u;
-    // Re-enter the native loop, which updates input and rechecks availability,
-    // placement validity, funds and pending-command limits on every iteration.
+    // Re-enter the native input/placement loop below the instance cap.
     return 1;
 }
 

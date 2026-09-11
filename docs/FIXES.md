@@ -8,7 +8,11 @@ Save creates `fixes.cfg` beside the launchers unless another location is selecte
 
 Hold Shift **at the moment you place** a building or defense to keep the same placement action selected. Each additional placement needs another click. Placing without Shift exits normally. Right-click and the game's other cancellation paths still work; releasing Shift alone does not cancel a preview already retained.
 
-After each accepted placement, the fix retains the placement loop instead of discarding its preview. It consumes the click edge, updates input and lets the original loop recheck the production menu and placement rules. If the building disappears from the available menu or the production category becomes disabled, the loop exits normally. Terrain, funds, ownership, building instance limits and pending-command limits remain native checks. This does not create free buildings or an automatic construction queue.
+After each accepted Shift placement, the fix calls the same native per-building count check as normal successful-placement cleanup. That check includes the newly submitted building and reads the configured cap. Reaching the cap removes its menu icon and exits placement; below the cap, the preview remains, the click edge is consumed and the original input/placement loop continues. Right-click cancellation, disabled producers, terrain and command handling remain native.
+
+Version 0.2.0 only rechecked the menu, without performing the success-time cap check that removes its icon. That stale icon allowed repeated Shift placements above the cap. Version 0.2.1 corrects that omission and clears the active menu-item pointer after native removal, preventing cleanup from using the deleted item twice.
+
+The native check is `0x4078B5` (calling `0x40772A`), also used by normal cleanup at `0x40A9F6`. Tests execute the original count comparison with cap 1, 4, 8 and 20 across factions and several building types. They check cap-minus-one, cap and already-over-cap states, preserved counts and safe subsequent cleanup. Network command latency and complete matches still need manual testing.
 
 ## Zero damage acts as a target filter
 
@@ -41,9 +45,9 @@ Business rules live in [native/fixes.cpp](../native/fixes.cpp), with the verifie
 | Nearby target selector | `0x4A1893` | Nine-byte whole-instruction prologue; fastcall unit/target |
 | Broader ground target selector | `0x4A2039` | Six-byte whole-instruction prologue; fastcall unit/target |
 | Shared target validator | `0x4A265E` | Nine-byte prologue; fastcall plus two callee-cleaned stack arguments |
-| Accepted building placement | `0x466D01` | Six-byte pending-command store; preserve registers/flags and return to `0x46677E` only with Shift held |
+| Accepted building placement | `0x466D01` | Six-byte pending-command store; preserve registers/flags and return to `0x46677E` only with Shift held and below the instance cap |
 
-`fixes_patch.py` is the small version-specific bridge. Every enabled hook is checked against original bytes **before any feature writes process memory**. Copied prologues contain no relative instructions. Entry hooks call typed C++ functions; the sole mid-function adapter preserves the original store and CPU state. The Shift flag is `0x10` in the game's modifier snapshot at `0x565438`: the native key mapping connects scan code `0x2A` to that flag. The input loop refreshes this snapshot, so the fix needs no OS keyboard polling.
+`fixes_patch.py` is the small version-specific bridge. Every enabled hook is checked against original bytes **before any feature writes process memory**. Copied prologues contain no relative instructions. Entry hooks call typed C++ functions; the placement mid-function adapter preserves the original store and CPU state. The Shift flag is `0x10` in the game's modifier snapshot at `0x565438`: the native key mapping connects scan code `0x2A` to that flag. The input loop refreshes this snapshot, so the fix needs no OS keyboard polling.
 
 Priority uses at most five native scans, one per distinct damage value, and stops on the first successful class group. Equal damage classes cost one scan together. Filtering uses a stack-scoped context restored after the synchronous native selector returns; these routines do not yield. No full-world Python scan, persistent unit-pointer cache or separate target-list allocation is introduced. Large-army performance is a manual-test item.
 
@@ -60,3 +64,5 @@ Alternatively pass `--compiler` with the path to an x86-targeting `cl.exe`; `lin
 The normal suite covers schema/type rejection, defaults, undo/redo, atomic saves without backups, external edits, shared toolbar/toggle UI, source/payload consistency and refusal before writes. Optional `unicorn` and `pefile` tests with `KKND2_TEST_EXE` execute the compiled module and original selector/validator instructions in synthetic worlds. Tests cover live damage values, turret weapons, independent toggle combinations, all five damage classes, equal-value ties, range/minimum range, alliances, hidden targets, stale generation IDs, and Shift adapter register/flag/stack preservation and availability rechecks. These are not full gameplay tests.
 
 For a manual match, test mixed infantry/vehicle/beast formations with different damage values, a zero-damage target outside range, explicit orders, turret/anti-air units, and repeated Shift placement through a building limit. Try right-click cancellation and releasing Shift before the next placement. Check a large battle before treating the new targeting policy as final.
+
+The same compiled payload also supplies the two AI income-building ceiling comparisons described in [Buildings and campaign](BUILDINGS_AND_CAMPAIGN.md). Those follow Building Limits and are independent of the three Fixes toggles.

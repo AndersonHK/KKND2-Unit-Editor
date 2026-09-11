@@ -21,7 +21,7 @@ except ImportError:
 
 class World:
     unit, output, stack, stop = 0x210000, 0x202000, 0x108000, 0x101000
-    def __init__(self, image, values, damages=(10, 20, 30, 5, 1), turret=False):
+    def __init__(self, image, values, damages=(10, 20, 30, 5, 1), turret=False, limits=None):
         self.cpu = Uc(UC_ARCH_X86, UC_MODE_32)
         for base, size in ((0x400000, 0x200000), (0x100000, 0x10000), (0x200000, 0x100000), (0x700000, 0x10000)):
             self.cpu.mem_map(base, size)
@@ -44,9 +44,9 @@ class World:
             self.cpu.mem_write(self.unit+0x1000+0xe4, struct.pack('<H', 2))
             self.put(self.unit+0x1000+0x64, 0)
         self.set_damage(damages)
-        fixes_patch.validate_memory(self.cpu.mem_read, values)
+        fixes_patch.validate_memory(self.cpu.mem_read, values, limits)
         self.plan = fixes_patch.prepare(self.cpu.mem_read, self.cpu.mem_write, lambda n: 0x700000,
-                                       lambda a,n: None, values)
+                                       lambda a,n: None, values, limits)
         for a, _, raw in self.plan: self.cpu.mem_write(a, raw)
         self.cpu.hook_add(UC_HOOK_CODE, self.hook)
 
@@ -188,6 +188,8 @@ class NativeFixesTests(TestCase):
         for modifiers in (0,0x10,0x20,0x40,0x70):
             w=World(self.image,settings(shift_build=True))
             c=w.cpu;frame=0x109000;stack=0x108000
+            w.put(frame-0x88,0x200000);w.put(0x200074,72)
+            w.put(0x53f628,0x53f628)
             w.put(frame-0x5c,1);w.put(0x565438,modifiers);w.put(0x5652cc,0x31)
             c.reg_write(UC_X86_REG_EBP,frame);c.reg_write(UC_X86_REG_ESP,stack)
             registers=(UC_X86_REG_EAX,UC_X86_REG_EBX,UC_X86_REG_ECX,UC_X86_REG_EDX,UC_X86_REG_ESI,UC_X86_REG_EDI)
@@ -204,11 +206,39 @@ class NativeFixesTests(TestCase):
             self.assertEqual(w.get(frame-0x5c),0 if modifiers & 0x10 else 1)
             self.assertEqual(w.get(0x5652cc),0x21 if modifiers & 0x10 else 0x31)
 
+    def test_ai_income_caps_follow_each_faction_and_preserve_comparison(self):
+        from kknd2_editor.building_limits import BUILDINGS
+        limits={k:s['default'] for k,s in BUILDINGS.items()}
+        for faction,cap in zip(('SURV','MUTE','ROBOT'),(2,8,20)):
+            limits[f'UNIT_{faction}_COLLECTOR']=cap
+            limits[f'UNIT_{faction}_CONVERTER']=cap+1
+        for race,faction in enumerate(('SURV','MUTE','ROBOT')):
+            for suffix,site,counter in (('COLLECTOR',0x4277a6,0x94),('CONVERTER',0x4277f4,0x90)):
+                cap=limits[f'UNIT_{faction}_{suffix}']
+                for count in (0,cap-1,cap,cap+1,100):
+                    with self.subTest(race=race,suffix=suffix,count=count):
+                        w=World(self.image,settings(),limits=limits);c=w.cpu
+                        for k,spec in BUILDINGS.items():c.mem_write(spec['address'],struct.pack('<H',limits[k]))
+                        w.put(0x200008,0x505ea8+race*0x74);w.put(0x200000+counter,count)
+                        regs=(UC_X86_REG_EAX,UC_X86_REG_EBX,UC_X86_REG_ECX,UC_X86_REG_EDX,UC_X86_REG_ESI,UC_X86_REG_EDI,UC_X86_REG_EBP)
+                        for r in regs:c.reg_write(r,0x200000 if r==UC_X86_REG_EAX else 0x123456)
+                        c.reg_write(UC_X86_REG_ESP,0x108000)
+                        c.emu_start(site,site+7,count=1000)
+                        flags=c.reg_read(UC_X86_REG_EFLAGS)&0x8d5
+                        for r in regs:self.assertEqual(c.reg_read(r),0x200000 if r==UC_X86_REG_EAX else 0x123456)
+                        self.assertEqual(c.reg_read(UC_X86_REG_ESP),0x108000)
+                        # Compare to an ordinary CMP with the same custom cap.
+                        original=self.image[site-0x400000:site-0x400000+7]
+                        c.mem_write(site,original[:-1]+bytes([cap]))
+                        c.emu_start(site,site+7,count=1)
+                        self.assertEqual(flags,c.reg_read(UC_X86_REG_EFLAGS)&0x8d5)
+
     def test_shift_reenters_input_loop_and_exits_on_unavailability(self):
         for availability in ('available', 'missing', 'disabled'):
             w=World(self.image,settings(shift_build=True))
             c=w.cpu;frame=0x109000
             w.put(frame-0x88,0x200000);w.put(frame-0x5c,1)
+            w.put(0x200074,72);w.put(0x53f628,0x53f628)
             w.put(0x565438,0x10);w.put(0x5652cc,0x10)
             c.mem_write(0x565508,b'\x00')
             c.mem_write(0x203012,struct.pack('<H',6 if availability=='available' else 0))
@@ -230,3 +260,45 @@ class NativeFixesTests(TestCase):
             self.assertEqual(c.mem_read(0x565508,1),b'\x01')
             self.assertEqual(w.get(0x5652cc),0)
             self.assertEqual(c.reg_read(UC_X86_REG_ESP),0x108000)
+
+    def test_shift_checks_real_native_instance_counts_and_custom_caps(self):
+        # Execute the unmodified game's 4078B5/40772A count+1 logic. Only menu
+        # rendering/removal is stubbed; availability is NOT a canned response.
+        # Completed/in-progress buildings both enter this native count list.
+        for building in (72, 73, 74, 90, 91, 92, 93, 94, 95, 102, 108, 112):
+            for cap in (1, 4, 8, 20):
+                for existing in (max(0, cap-2), cap-1, cap, cap+1):
+                    with self.subTest(building=building, cap=cap, existing=existing):
+                        w=World(self.image, settings(shift_build=True)); c=w.cpu
+                        frame=0x109000; menu_item=0x205000
+                        w.put(frame-0x88,0x200000);w.put(frame-0x5c,1)
+                        w.put(0x200074,building);w.put(0x565438,0x10)
+                        w.put(0x5404d8,menu_item)
+                        data=w.get(0x52bed8+building*0x110+0xe0)
+                        c.mem_write(data+0x10,struct.pack('<H',cap))
+                        w.put(0x53f628,0x206000);w.put(0x206000,0x53f628)
+                        w.put(0x206008,building);w.put(0x20600c,existing)
+                        removed=[]
+                        def menu(cpu,address,size,user):
+                            if address==0x459c27: w.returned(0x207000)
+                            elif address==0x45ae13:
+                                removed.append(cpu.reg_read(UC_X86_REG_EDX)&0xffff)
+                                w.returned(0)
+                        c.hook_add(UC_HOOK_CODE,menu)
+                        c.reg_write(UC_X86_REG_EBP,frame);c.reg_write(UC_X86_REG_ESP,0x108000)
+                        end=0x466d07 if existing+1>=cap else 0x46677e
+                        c.emu_start(0x466d01,end,count=10000)
+                        self.assertEqual(c.reg_read(UC_X86_REG_EIP),end)
+                        self.assertEqual(removed,[building] if existing+1>=cap else [])
+                        self.assertEqual(w.get(0x5404d8),0 if removed else menu_item)
+                        self.assertEqual(w.get(frame-0x5c),1 if removed else 0)
+                        self.assertEqual(w.get(0x20600c),existing) # Never forge live counts.
+                        self.assertEqual(c.reg_read(UC_X86_REG_ESP),0x108000)
+                        if removed:
+                            # Native success/cancel cleanup must not dereference
+                            # the deleted item or remove it again.
+                            for address in (0x40a9f6,0x40aa34):
+                                w.put(0x108000,w.stop)
+                                c.reg_write(UC_X86_REG_ESP,0x108000)
+                                c.emu_start(address,w.stop,count=1000)
+                            self.assertEqual(removed,[building])

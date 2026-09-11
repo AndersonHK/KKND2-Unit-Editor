@@ -10,7 +10,7 @@ For the standalone download and short installation steps, start with the [projec
 
 - Windows and Python **3.9 or newer**, with **Tcl/Tk and IDLE** enabled in the Python installer. For the optional VBS launcher, install the Windows Python launcher or add Python to PATH.
 - Your own KKND2: Krossfire installation and its original-format `UCONFIG` files.
-- **KWIPv3.exe** is required only for the **Launch game** button and its building limits, overrides, projectile settings, tech unlocks, and behavior fixes. Editing unit configurations does not require it.
+- **KWIPv3.exe** is required to apply the launcher's extended Burst Count, building limits, overrides, projectile settings, tech unlocks, and behavior fixes. Editing native unit configurations does not require it.
 - Write access to the configuration folders and this checkout, where the editor stores its separate settings files by default.
 
 Game executables, art, and personal configurations are not included. The embedded unit-stat baseline is a fixed reference snapshot; it is not taken from your current modded files. The UI and unit names are currently English only.
@@ -67,6 +67,8 @@ On the unit tab, search by English name or internal game ID, filter by faction, 
 **Undo / Ctrl+Z** and **Redo / Ctrl+Y** operate on edit groups. Unit edits are committed to the in-memory model when leaving a unit, reviewing, or saving. **Revert saved** discards pending edits for the selected unit, while **Reset defaults** restores that unit's reference values. On Projectiles, Revert saved and Reset defaults affect the selected projectile. On Building limits, Overrides, Tech unlocks, and Fixes these actions apply to the selected tab's entire configuration. Resetting defaults is undoable and does not save until you click Save. Switching files or closing with pending edits prompts to save, discard, or cancel. **Ctrl+F** focuses unit search.
 
 New unit values above the displayed editor caps are rejected. These match the native editor except for **cost, extended from 5,000 to 10,000**, and **reload time, extended from 250 to 600** (nominally 10 seconds at normal speed, before firing-cycle effects). Existing out-of-range values are preserved when unrelated fields are edited; they are never silently clamped. Newly edited build times must be at least 1. See [the stat reference](STAT_REFERENCE.md) for all caps, timing/range units, and the evidence behind them. Movement speed remains a raw rate because its physical conversion has not been verified.
+
+**Burst Count** is an additional row for supported vehicle turrets, saved in `UCONFIG_nn_ext.cfg` beside the selected preset. It has the same editing/review controls and uses a 1–127 shot range. The Anaconda's stock value is 2; its legacy Bullet Count remains 0. Click **Launch game** to apply the selected extension for that session, and relaunch to switch presets. Companions have a compatibility title header and are excluded from the configuration dropdown; open the original CFG to edit both. See [extended unit settings](UNIT_EXTENSIONS.md) for supported weapons and the versioned schema.
 
 ## Building limits
 
@@ -204,3 +206,9 @@ For an optional real-file integration run, set `KKND2_TEST_FILE` to a configurat
 Personal `.cfg` files, backups, game binaries, caches, environments, and local IDE files are ignored by Git. Only stock example configurations are included. Keep game files and personal presets out of contributions.
 
 See [override and combat-order research](OVERRIDES_RESEARCH.md) and the [engine extension backlog](ENGINE_EXTENSION_BACKLOG.md) for proposed features, source-project findings, and outstanding validation. The research notes are historical; the Overrides and Tech unlocks guides describe the implemented controls. Attack-move, expanded acquisition, additional projectile controls, and physics extensions remain exploratory. Native fixes are implemented in C++; see [the build guide](FIXES.md#rebuilding-and-testing) if changing their behavior.
+
+## Campaign unit configurations
+
+Select a preset on Unit editor, enable **Use in campaign** beside the configuration selector and click **Launch game**. Engine settings and Fixes still apply. This checkbox starts off when the editor opens and applies to the selected configuration at launch. It does not select the multiplayer lobby preset.
+
+The selected file must be in this game's UCONFIG folder, numbered 00 through 29, with a unique internal preset name. Ambiguous names are rejected before creating the process. Start a new mission for testing: pre-existing units in saved games may carry saved state. See [details and gameplay findings](BUILDINGS_AND_CAMPAIGN.md).

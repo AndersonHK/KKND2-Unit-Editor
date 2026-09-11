@@ -1,5 +1,7 @@
 # Personal game configurations, editor settings, and save backups.
 *.cfg
+# Per-preset unit extensions contain personal settings too.
+*_ext.cfg
 *.cfg.*
 !examples/building_limits.example.cfg
 !examples/overrides.example.cfg

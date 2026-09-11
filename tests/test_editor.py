@@ -269,6 +269,11 @@ class GuiTests(TestCase):
                         app.update()
                         self.assertFalse(callback_errors)
                         self.assertGreater(app.stats.canvas.winfo_height(), 25)
+                        self.assertTrue(app.campaign_check.winfo_ismapped())
+                        self.assertLessEqual(app.campaign_check.winfo_x()+app.campaign_check.winfo_width(),
+                                             app.configuration_row.winfo_width())
+                        self.assertLessEqual(app.file_box.winfo_x()+app.file_box.winfo_width(),
+                                             app.campaign_check.winfo_x())
                         expected_row_height = editor.tkfont.nametofont('TkDefaultFont').metrics('linespace')
                         self.assertGreaterEqual(int(app.style.lookup('Treeview', 'rowheight')), expected_row_height)
                         # Every toolbar/action control is visible, and buttons wrap.

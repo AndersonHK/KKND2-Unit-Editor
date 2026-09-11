@@ -38,7 +38,7 @@ Both routines schedule a delay of 360 game-time units. The scheduler scales this
 
 The game already has a persistent placement loop (`0x466724`), per-pass availability checks, a synchronized placement command (`0x466CEE–0x466CF3`), and cleanup after a successful placement. This makes retaining the placement action while Shift is held a plausible small native UI change, rather than a new building-production system.
 
-This is now implemented as an opt-in [Shift build fix](FIXES.md#shift-build). After accepted command submission it preserves the pending count, consumes the click edge and re-enters the original input/availability loop while Shift is held. Emulator checks cover the adapter and availability paths; full gameplay validation remains necessary. Manual tests need ordinary buildings, towers, walls, the last allowed instance, loss of the producer, insufficient funds, right-click cancellation and network delay.
+This is now implemented as an opt-in [Shift build fix](FIXES.md#shift-build). After accepted command submission it preserves the pending count and, from 0.2.1 onward, runs the native success-time instance-cap/menu check before deciding whether to retain the preview. The original 0.2.0 menu-only recheck missed this and allowed Shift builds above the cap. Emulator checks cover actual cap comparisons, cleanup, the adapter and availability paths; full gameplay validation remains necessary. Manual tests need ordinary buildings, towers, walls, the last allowed instance, loss of the producer, insufficient funds, right-click cancellation and network delay.
 
 ## Larger art and collision footprints
 

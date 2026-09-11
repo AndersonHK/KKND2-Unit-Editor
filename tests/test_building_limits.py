@@ -130,7 +130,17 @@ class LimitsGuiTests(TestCase):
                         time.sleep(.01)
                     self.assertFalse(app.launching)
                     self.assertEqual(launched.call_args.args[1]['UNIT_SURV_TOWER1'],12)
-                    self.assertIn('Select UCONFIG_02.cfg',app.status.get())
+                    self.assertIn(f'Select {app.config_doc.name}',app.status.get())
+                    self.assertIsNone(launched.call_args.kwargs['campaign_config'])
+                    app.campaign_stats.set(True)
+                    app.launch()
+                    deadline=time.monotonic()+3
+                    while app.launching and time.monotonic()<deadline:
+                        app.update()
+                        time.sleep(.01)
+                    self.assertFalse(app.launching)
+                    self.assertEqual(launched.call_args.kwargs['campaign_config'],cfg)
+                    self.assertIn(f'Campaign unit config: {app.config_doc.name}',app.status.get())
                 page.variables['UNIT_SURV_TOWER1'].set('101')
                 with mock.patch.object(editor,'launch_game') as launched, mock.patch.object(editor.messagebox,'showerror'):
                     app.launch()

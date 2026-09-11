@@ -19,6 +19,7 @@ from .fixes import FIXES
 from . import __version__
 from .overrides import OVERRIDES
 from .game_launcher import launch_game
+from . import unit_extensions
 from tkinter import ttk, filedialog, messagebox
 from tkinter import font as tkfont
 
@@ -27,6 +28,8 @@ FIELDS = ("Cost", "Build-Time", "Hitpoints", "View-Range", "Speed", "Armour",
           "Accuracy", "Weapon-Range", "Min-Range", "Bullet-Count", "Fire-Delay",
           "Reload-Time", "InfantryDamage", "VehicleDamage", "BeastDamage",
           "BuildingDamage", "AircraftDamage")
+EDITOR_FIELDS = FIELDS + ("Burst-Count",)
+BURST_COLUMN = len(FIELDS)
 FACTIONS = {"SURV": "Survivors", "MUTE": "Evolved", "ROBOT": "Series 9"}
 
 
@@ -39,11 +42,13 @@ FIELD_UNITS = (
     "resource units", "seconds (normal speed)", "HP",
     "tiles", "raw movement rate", "raw armour rating",
     "raw accuracy rating", "pixels (32 = 1 tile)", "pixels (32 = 1 tile)",
-    "burst count", "1/60 s ticks (normal speed)", "1/60 s ticks (normal speed)",
+    "native weapon count", "1/60 s ticks (normal speed)", "1/60 s ticks (normal speed)",
     "base damage", "base damage", "base damage", "base damage", "base damage",
 )
 
 def field_hint(column):
+    if column == BURST_COLUMN:
+        return "shots per turret burst (extended) | 1–127"
     return f"{FIELD_UNITS[column]} | max {FIELD_MAXIMUMS[column]:,}"
 
 # English display names from the installed game, keyed by stable config IDs.
@@ -339,6 +344,78 @@ def save_config(path, config):
     return backup
 
 
+class ExtendedConfig(Config):
+    """One edit history for native cells and virtual, separately saved cells."""
+
+    def __init__(self, raw, path):
+        super().__init__(raw)
+        self.path = Path(path)
+        self.extensions = unit_extensions.UnitExtensions(path, {u.identifier for u in self.units})
+        self.units = [Unit(u.identifier, u.cells + (Cell(-1, 3, str(
+            self.extensions.units.get(u.identifier, {}).get('burst_count',
+                unit_extensions.BURSTS.get(u.identifier, (None, None, '-'))[2]))),))
+            for u in self.units]
+
+    def validate(self, row, column, value):
+        if column < len(FIELDS):
+            return super().validate(row, column, value)
+        if column != BURST_COLUMN:
+            raise ValueError('Unknown extended field.')
+        if self.units[row].cells[column].original == '-':
+            if value != '-':
+                raise ValueError('This unit has no supported turret burst setting.')
+        elif not re.fullmatch(r'[0-9]{1,3}', value) or not 1 <= int(value) <= unit_extensions.MAX_BURST:
+            raise ValueError('Burst Count: enter a whole number from 1 to 127.')
+        return value
+
+    def serialize(self):
+        native = Config(self.raw)
+        native.apply({key: value for key, value in self.changes.items() if key[1] < len(FIELDS)})
+        return native.serialize()
+
+    def extension_values(self):
+        units = {}
+        for row, unit in enumerate(self.units):
+            if unit.identifier in unit_extensions.BURSTS:
+                value = self.validate(row, BURST_COLUMN, self.value(row, BURST_COLUMN))
+                if int(value) != unit_extensions.BURSTS[unit.identifier][2]:
+                    units[unit.identifier] = {'burst_count': int(value)}
+        return units
+
+    def save(self):
+        # Validate both files before either write. Each replacement is atomic;
+        # if the second fails, retain its edits and rebase the saved native cells
+        # so retrying cannot report a false external-change conflict.
+        self.extensions.check_unchanged()
+        payload = self.serialize()
+        units = self.extension_values()
+        if self.extensions.raw is not None or units:
+            unit_extensions.encode(payload[:120], units)
+        extension_before = self.extensions.raw
+        backup = save_config(self.path, self)
+        if payload != self.raw:
+            native = Config(payload)
+            self.raw = payload
+            self.units = [Unit(u.identifier, u.cells + (old.cells[BURST_COLUMN],))
+                          for u, old in zip(native.units, self.units)]
+            self.changes = {key: value for key, value in self.changes.items() if key[1] >= len(FIELDS)}
+            self.undo_stack.clear()
+            self.redo_stack.clear()
+        try:
+            self.extensions.save(payload[:120], units)
+        except OSError as exc:
+            if backup:
+                raise OSError(f'Native values were saved; extended edits remain pending. {exc}') from exc
+            raise
+        if backup or self.changes or self.extensions.raw != extension_before:
+            self.__init__(payload, self.path)
+        return backup
+
+
+def config_files(folder):
+    return sorted(path for path in Path(folder).glob('*.cfg')
+                  if not path.stem.lower().endswith('_ext'))
+
 
 # Frozen from a reference stock configuration; never refreshed from an edited file.
 DEFAULT_SOURCE_SHA256 = 'e725992fc9c7227c0ac67f17bc43b4457bda72411605fd3b383fed69853df5ad'
@@ -455,6 +532,13 @@ UNIT_ROBOT_WALL1 100 5 500 10 0 0 230 192 0 0 0 30 - - - - -
 UNIT_ROBOT_WALL2 500 15 7500 10 0 0 230 192 0 0 0 30 1125 3750 3750 125 3750
 """
 DEFAULTS = {parts[0]: tuple(parts[1:]) for parts in (line.split() for line in _DEFAULT_ROWS.splitlines())}
+
+
+def editor_defaults(identifier):
+    native = DEFAULTS.get(identifier)
+    if native is None:
+        return None
+    return native + (str(unit_extensions.BURSTS.get(identifier, (None, None, '-'))[2]),)
 
 class EditorTabs(ttk.Frame):
     """Simple page tabs without native Notebook background repaint propagation."""
@@ -645,6 +729,7 @@ class Editor(tk.Tk):
         self.style.configure("Invalid.TEntry", foreground="#bd2727")
         self.style.configure("Changed.TEntry", foreground="#005ca8")
         self.configure_button_styles()
+        self.configure_campaign_style()
         self.build_ui()
         self.protocol("WM_DELETE_WINDOW", self.close)
         for key, command in (("<Control-s>", lambda: self.active_action("save")), ("<Control-z>", lambda: self.active_action("undo")), ("<Control-y>", lambda: self.active_action("redo")), ("<Control-f>", self.focus_search)):
@@ -663,6 +748,40 @@ class Editor(tk.Tk):
 
     def px(self, number):
         return max(1, round(number * self.scale))
+
+    def configure_campaign_style(self):
+        # At 200%: +4 px font size, a 20 px box instead of Vista's ~14 px.
+        # Cache once at startup; live resizing never regenerates these images.
+        base = tkfont.nametofont('TkDefaultFont')
+        pixels = round(base.cget('size') * float(self.tk.call('tk', 'scaling')))
+        self.campaign_font = base.copy()
+        self.campaign_font.configure(size=-(pixels + self.px(2)))
+        size = self.campaign_indicator_size = max(13, self.px(10))
+        border = max(1, self.px(0.6))
+        self.campaign_images = []
+        for selected, disabled in ((False, False), (True, False), (False, True), (True, True)):
+            icon = tk.PhotoImage(master=self, width=size + self.px(3), height=size)
+            ink = '#9b9b9b' if disabled else '#315c86'
+            icon.put(ink, to=(0, 0, size, size))
+            icon.put('#eeeeee' if disabled else '#ffffff', to=(border, border, size-border, size-border))
+            if selected:
+                points = ((0.22, 0.50), (0.43, 0.72), (0.80, 0.26))
+                for (ax, ay), (bx, by) in zip(points, points[1:]):
+                    steps = max(1, round(size * max(abs(bx-ax), abs(by-ay))))
+                    for step in range(steps+1):
+                        x = round(size * (ax + (bx-ax)*step/steps))
+                        y = round(size * (ay + (by-ay)*step/steps))
+                        icon.put(ink, to=(x, y, min(size, x+border+1), min(size, y+border+1)))
+            self.campaign_images.append(icon)
+        off, on, disabled_off, disabled_on = self.campaign_images
+        self.style.element_create('Campaign.indicator', 'image', off,
+            ('disabled', 'selected', disabled_on), ('disabled', disabled_off), ('selected', on))
+        def replace_indicator(layout):
+            return [('Campaign.indicator' if name.endswith('.indicator') else name,
+                     {key: replace_indicator(value) if key == 'children' else value
+                      for key, value in options.items()}) for name, options in layout]
+        self.style.layout('Campaign.TCheckbutton', replace_indicator(self.style.layout('TCheckbutton')))
+        self.style.configure('Campaign.TCheckbutton', font=self.campaign_font)
 
     def configure_button_styles(self):
         padding = (self.px(10), 0)
@@ -723,6 +842,7 @@ class Editor(tk.Tk):
         self.footer = ttk.Frame(shell)
         self.footer.grid(row=3, column=0, sticky="ew", pady=(p(7), 0))
         self.footer.columnconfigure(0, weight=1)
+        self.campaign_stats = tk.BooleanVar(value=False)
         self.launch_button = ttk.Button(self.footer, text="Launch game", command=self.launch)
         self.launch_button.grid(row=0, column=1, sticky="se", padx=(p(12), 0))
         outer.columnconfigure(0, weight=1)
@@ -738,8 +858,13 @@ class Editor(tk.Tk):
             self.toolbar.add(label, lambda name=action: self.active_action(name))
         self.file_caption = ttk.Label(outer, text="Configuration")
         self.file_caption.grid(row=2, column=0, sticky="w")
-        self.file_box = ttk.Combobox(outer, state="readonly", textvariable=self.file_var, width=15)
-        self.file_box.grid(row=3, column=0, sticky="ew", pady=(p(4), p(10)))
+        configuration_row = self.configuration_row = ttk.Frame(outer)
+        configuration_row.grid(row=3, column=0, sticky="ew", pady=(p(4), p(10)))
+        configuration_row.columnconfigure(0, weight=1)
+        self.file_box = ttk.Combobox(configuration_row, state="readonly", textvariable=self.file_var, width=15)
+        self.file_box.grid(row=0, column=0, sticky="ew")
+        self.campaign_check = ttk.Checkbutton(configuration_row, text="Use in campaign", variable=self.campaign_stats, style="Campaign.TCheckbutton")
+        self.campaign_check.grid(row=0, column=1, sticky="e", padx=(p(8), 0))
         self.file_box.bind("<<ComboboxSelected>>", self.file_selected)
         self.main_panel = ttk.Frame(outer)
         self.main_panel.grid(row=4, column=0, sticky="nsew")
@@ -791,25 +916,27 @@ class Editor(tk.Tk):
         grid.columnconfigure(0, weight=1)
         for col, label in enumerate(("STAT", "VALUE", "DEFAULT", "DELTA", "SAVED")):
             ttk.Label(grid, text=label, foreground="#666666").grid(row=0, column=col, sticky="w" if col == 0 else "e", padx=p(7), pady=p(7))
-        self.values, self.entries, self.original_labels = [], [], []
-        self.default_labels, self.delta_labels = [], []
-        for i, field in enumerate(FIELDS):
+        self.values, self.entries, self.original_labels = ([None] * len(EDITOR_FIELDS) for _ in range(3))
+        self.default_labels, self.delta_labels = ([None] * len(EDITOR_FIELDS) for _ in range(2))
+        field_order = list(range(10)) + [BURST_COLUMN] + list(range(10, len(FIELDS)))
+        for display_row, i in enumerate(field_order, 1):
+            field = EDITOR_FIELDS[i]
             label = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", field).replace("-", " ")
-            ttk.Label(grid, text=label + "\n" + field_hint(i), justify="left").grid(row=i + 1, column=0, sticky="w", pady=p(7), padx=p(7))
+            ttk.Label(grid, text=label + "\n" + field_hint(i), justify="left").grid(row=display_row, column=0, sticky="w", pady=p(7), padx=p(7))
             var = tk.StringVar()
             entry = ttk.Entry(grid, width=8, textvariable=var, state="disabled")
-            entry.grid(row=i + 1, column=1, sticky="ew", padx=p(7), pady=p(3))
+            entry.grid(row=display_row, column=1, sticky="ew", padx=p(7), pady=p(3))
             entry.bind("<FocusIn>", lambda _event, widget=entry: self.stats.reveal(widget))
             labels = []
             for col in (2, 3, 4):
                 item = ttk.Label(grid, text="", foreground="#777777", width=8, anchor="e")
-                item.grid(row=i + 1, column=col, sticky="e", padx=p(7))
+                item.grid(row=display_row, column=col, sticky="e", padx=p(7))
                 labels.append(item)
-            self.values.append(var)
-            self.entries.append(entry)
-            self.default_labels.append(labels[0])
-            self.delta_labels.append(labels[1])
-            self.original_labels.append(labels[2])
+            self.values[i] = var
+            self.entries[i] = entry
+            self.default_labels[i] = labels[0]
+            self.delta_labels[i] = labels[1]
+            self.original_labels[i] = labels[2]
             var.trace_add("write", lambda *_, index=i: self.form_changed(index))
         self.actions = FlowBar(self.right, p(5))
         self.actions.grid(row=3, column=0, sticky="ew", pady=(p(8), 0))
@@ -859,7 +986,7 @@ class Editor(tk.Tk):
             self.right.grid_forget()
             if mode == "side":
                 self.command_row.grid_configure(pady=(0, self.px(8)))
-                self.file_box.grid_configure(pady=(self.px(4), self.px(10)))
+                self.configuration_row.grid_configure(pady=(self.px(4), self.px(10)))
                 self.app_heading.grid()
                 self.identifier_label.grid()
                 self.file_caption.grid()
@@ -874,7 +1001,7 @@ class Editor(tk.Tk):
                 # Leave room for the wrapped tab strip on very small, high-DPI
                 # windows. Stat rows and button padding retain their full size.
                 self.command_row.grid_configure(pady=(0, self.px(2)))
-                self.file_box.grid_configure(pady=(0, self.px(2)))
+                self.configuration_row.grid_configure(pady=(0, self.px(2)))
                 self.app_heading.grid_remove()
                 self.identifier_label.grid_remove()
                 self.file_caption.grid_remove()
@@ -909,12 +1036,12 @@ class Editor(tk.Tk):
             widget = getattr(widget, "master", None)
 
     def scan_files(self):
-        self.files = sorted(self.folder.glob("*.cfg")) if self.folder.is_dir() else []
+        self.files = config_files(self.folder) if self.folder.is_dir() else []
         self.file_box.configure(values=[p.name for p in self.files])
 
     def load_file(self, path):
         try:
-            doc = Config(Path(path).read_bytes())
+            doc = ExtendedConfig(Path(path).read_bytes(), path)
         except (OSError, ValueError) as exc:
             messagebox.showerror("Cannot open configuration", str(exc), parent=self)
             self.file_var.set(self.path.name if self.path else "")
@@ -951,7 +1078,7 @@ class Editor(tk.Tk):
             return
         chosen = filedialog.askdirectory(parent=self, initialdir=self.folder)
         if chosen:
-            candidates = sorted(Path(chosen).glob("*.cfg"))
+            candidates = config_files(chosen)
             if not candidates:
                 messagebox.showinfo("No configurations", "This folder has no .cfg files.", parent=self)
                 return
@@ -965,7 +1092,7 @@ class Editor(tk.Tk):
 
     def different(self, row):
         unit = self.config_doc.units[row]
-        base = DEFAULTS.get(unit.identifier)
+        base = editor_defaults(unit.identifier)
         return bool(base and any(self.current_value(row, col) != value for col, value in enumerate(base)))
 
     def unit_mark(self, row):
@@ -1022,7 +1149,7 @@ class Editor(tk.Tk):
     def update_field(self, i):
         unit = self.config_doc.units[self.current]
         value = self.values[i].get()
-        base = DEFAULTS.get(unit.identifier, (None,) * len(FIELDS))[i]
+        base = (editor_defaults(unit.identifier) or (None,) * len(EDITOR_FIELDS))[i]
         self.default_labels[i].configure(text=base if base is not None else "n/a")
         valid = True
         try:
@@ -1097,7 +1224,7 @@ class Editor(tk.Tk):
         if self.current is None:
             return
         unit = self.config_doc.units[self.current]
-        base = DEFAULTS.get(unit.identifier)
+        base = editor_defaults(unit.identifier)
         if base is None:
             messagebox.showinfo("No baseline", "This unit is not in the embedded defaults.", parent=self)
             return
@@ -1116,14 +1243,14 @@ class Editor(tk.Tk):
     def comparison_rows(self, defaults=False):
         result = []
         for row, unit in enumerate(self.config_doc.units):
-            base = DEFAULTS.get(unit.identifier) if defaults else tuple(c.original for c in unit.cells)
+            base = editor_defaults(unit.identifier) if defaults else tuple(c.original for c in unit.cells)
             if base is None:
                 continue
             for col, old in enumerate(base):
                 value = self.config_doc.value(row, col)
                 if value != old:
                     delta = f"{int(value) - int(old):+d}" if value.isdigit() and old.isdigit() else "changed"
-                    result.append((f"{unit.label} / {unit.faction} ({unit.identifier})", FIELDS[col], old, value, delta))
+                    result.append((f"{unit.label} / {unit.faction} ({unit.identifier})", EDITOR_FIELDS[col], old, value, delta))
         return result
 
     def review(self):
@@ -1148,7 +1275,7 @@ class Editor(tk.Tk):
         frame.pack(fill="both", expand=True)
         frame.columnconfigure(0, weight=1)
         frame.rowconfigure(1, weight=1)
-        label = ttk.Label(frame, text="Baseline: UCONFIG_02.cfg snapshot, 2026-09-08" if defaults else "Changes since this file was opened or last saved.")
+        label = ttk.Label(frame, text="Baseline: stock unit configuration and KWIPv3 turret defaults" if defaults else "Changes since this file was opened or last saved.")
         label.grid(row=0, column=0, sticky="w", pady=(0, self.px(8)))
         table = ttk.Treeview(frame, columns=("unit", "stat", "old", "new", "delta"), show="headings")
         for key, heading, width in (("unit", "Unit", 310), ("stat", "Stat", 170), ("old", "Default" if defaults else "Saved", 90), ("new", "Current", 90), ("delta", "Delta", 90)):
@@ -1168,14 +1295,13 @@ class Editor(tk.Tk):
         if not self.config_doc or not self.commit_form():
             return False
         try:
-            backup = save_config(self.path, self.config_doc)
+            backup = self.config_doc.save()
         except (OSError, ValueError) as exc:
             messagebox.showerror("Save failed", str(exc), parent=self)
             return False
+        self.show_unit()
+        self.filter_units()
         if backup:
-            self.config_doc = Config(self.config_doc.serialize())
-            self.show_unit()
-            self.filter_units()
             self.status.set(f"Saved {self.path.name} | Backup: backups/{backup.name}")
         else:
             self.update_status()
@@ -1260,13 +1386,16 @@ class Editor(tk.Tk):
         unlocks = dict(self.unlocks_page.doc.values)
         projectiles = dict(self.projectiles_page.doc.values)
         fixes = dict(self.fixes_page.doc.values)
+        campaign_config = self.path if self.campaign_stats.get() else None
+        extensions = self.config_doc.extension_values()
+        config_name = self.config_doc.name
         self.launching = True
         self.launch_button.configure(state='disabled')
         self.status.set('Starting KWIPv3 with your settings…')
         results = queue.Queue()
         def worker():
             try:
-                results.put((launch_game(executable, values, overrides=overrides, unlocks=unlocks, projectiles=projectiles, fixes=fixes), None))
+                results.put((launch_game(executable, values, overrides=overrides, unlocks=unlocks, projectiles=projectiles, fixes=fixes, campaign_config=campaign_config, extensions=extensions), None))
             except Exception as exc:
                 results.put((None, str(exc)))
         threading.Thread(target=worker, daemon=True).start()
@@ -1282,7 +1411,9 @@ class Editor(tk.Tk):
                 self.status.set('Game launch failed.')
                 messagebox.showerror('Cannot launch game', error, parent=self)
             else:
-                self.status.set(f"KWIPv3 launched: building limits, overrides, tech unlocks, projectiles and fixes applied. Select {self.path.name} in the multiplayer Unit Config menu.")
+                self.status.set("KWIPv3 launched with your settings. " +
+                                (f"Campaign unit config: {config_name}." if campaign_config else
+                                 f"Select {config_name} in the multiplayer Unit Config menu."))
         self.after(50, check)
 
     def focus_search(self):

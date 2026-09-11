@@ -14,7 +14,7 @@ REQUIREMENTS
 ------------
 * 64-bit Windows 10 or 11.
 * Your own KKND2: Krossfire installation and original-format UCONFIG files.
-* KWIPv3.exe for Launch game and the five engine-settings tabs.
+* KWIPv3.exe for Launch game, turret Burst Count and the engine-settings tabs.
   Unit file editing works without KWIPv3.
 * Write access to the editor and game configuration folders.
 
@@ -52,10 +52,24 @@ BASIC USE
    right). Launch saves ALL tabs and applies their settings to KWIPv3.
 5. In the multiplayer lobby, select the SAME unit configuration you edited.
    The launcher does not select the lobby configuration automatically.
+6. For campaign missions, enable Use in campaign beside the Unit editor
+   configuration selector, then Launch game. It uses the preset display
+   name, not its filename. The checkbox starts off each editor session.
+
+Version @VERSION@ is a testing build: separate turret Burst Count, larger
+campaign checkbox, Shift cap correction and AI solar/thermal ceilings.
+In-match validation is still needed before sharing as a tested release.
+
+Burst Count appears below Bullet Count for supported vehicle turrets.
+The Anaconda defaults to 2 shots. The allowed range is 1-127; a dash means
+this unit has no supported separate turret setting. Save creates the
+matching UCONFIG_nn_ext.cfg without changing the original unit schema.
+Launch game applies that extension for the session. Relaunch to switch
+extensions; changing the lobby preset alone does not switch them.
 
 TABS
 ----
-Unit editor     Stats, prices, build times, damage and ranges.
+Unit editor     Stats, prices, build times, damage, ranges and turret bursts.
 Building limits Maximum instances per player and building type.
 Overrides       Research costs/times, tanker capacity, oil transfer,
                 passive incomes and building placement reach.
@@ -80,6 +94,10 @@ FILES AND COMPATIBILITY
 -----------------------
 Building limits, overrides, tech unlocks, projectiles and fixes use separate
 CFG files created on Save/Launch. They do not create .bak files.
+Extended unit values use UCONFIG_nn_ext.cfg beside the native preset;
+keep both files together when sharing. Extensions create no backups.
+They have a native title header plus versioned JSON; edit them in this
+tool. If you rename a preset title in-game, reopen and Save here too.
 Changed original unit files have recovery copies in UCONFIG/backups.
 Your settings are not bundled in this download.
 

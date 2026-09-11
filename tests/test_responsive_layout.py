@@ -18,7 +18,7 @@ class ResponsiveLayoutTests(TestCase):
                         labels = [w for w in app.stats.content.winfo_children()
                                   if int(w.grid_info().get('column', -1)) == 0
                                   and int(w.grid_info().get('row', 0)) > 0]
-                        self.assertEqual(len(labels), 17)
+                        self.assertEqual(len(labels), len(editor.EDITOR_FIELDS))
                         for label in labels:
                             self.assertIsInstance(label, ttk.Label)
                             self.assertEqual(str(label.cget('justify')), 'left')

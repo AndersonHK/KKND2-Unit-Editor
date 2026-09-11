@@ -13,6 +13,8 @@ namespace kwip {
     const Word damage_class = 0x9c, damage = 0x18;
     const Word modifiers = 0x565438, left_pressed = 0x5652cc;
     const Word shift = 0x10;
+    const Word placement_controller = 0x88, selected_building = 0x74;
+    const Word check_building_limit = 0x4078b5, active_build_item = 0x5404d8;
     const int placement_success = -0x5c;
 }
 typedef int (__fastcall *Selector)(Unit*, Target*);

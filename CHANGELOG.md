@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.2.2 - 2026-09-11
+
+- Add Burst Count to Unit editor for supported vehicle turrets, including the Anaconda's actual two-shot default. Integrate defaults, comparisons, filtering, undo/redo and saving with native unit edits.
+- Save new unit fields in versioned `UCONFIG_nn_ext.cfg` companions, without changing the original CFG schema or creating extension backups. Preserve the native preset title so the game's file scan remains compatible.
+- Apply extended values through the launcher after checking the supported turret data. Limit bursts to 127 because the runtime counter is signed 8-bit.
+- Enlarge the campaign text and checkbox with cached DPI-scaled artwork while retaining native checkbox keyboard behavior and live layout.
+
+Manual playtesting reported working features and no regressions on 2026-09-11. Validation also includes 81 automated tests, native instruction checks, suspended-process patch verification and packaged GUI startup. No personal settings are included.
+
+## 0.2.1 - Included in 0.2.2
+
+- Fix Shift-repeat placement skipping the native per-building limit/menu update.
+- Make the AI solar/thermal construction ceilings use the corresponding faction's Building Limits values.
+- Add Use in campaign for the selected unit preset, using the native `-stats` option with name/path validation.
+- Document separate Anaconda turret burst counts, research-tier effects and remaining research work.
+
+These changes are included in the manually tested 0.2.2 release.
+
 ## 0.2.0 - 2026-09-09
 
 First standalone Windows x64 package. Includes the editor improvements developed since the original source-only unit/building editor:

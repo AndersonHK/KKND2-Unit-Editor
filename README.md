@@ -1,6 +1,6 @@
 # KKND2 Unit Editor
 
-**Version 0.2.2** | Windows x64 | [Download the portable ZIP](release/KKND2-Unit-Editor-v0.2.2-windows-x64.zip?raw=true)
+**Version 0.3.0 — testing build** | Windows x64 | [Download the portable ZIP](release/KKND2-Unit-Editor-v0.3.0-windows-x64.zip?raw=true)
 
 A fan-made editor for **KKND2: Krossfire**. Edit unit stats without corrupting the game's mixed-format configuration files, and launch **KWIPv3** with custom building limits, research and oil settings, tech unlocks, projectile settings and optional behavior fixes.
 
@@ -38,14 +38,15 @@ To upgrade, close the editor and replace the EXE and `README.txt`; keep your exi
 | **Overrides** | Research cost/time and tier steps, tanker capacity, loading/unloading rates, solar/thermal income and building placement reach |
 | **Tech unlocks** | Required producer research level for individual units and buildings |
 | **Projectiles** | Verified travel speeds and homing missile expiration timers |
-| **Fixes** | Shift-repeat building placement, zero-damage target filtering, and target-type priority by weapon damage |
+| **Upgrades** | Six-level oil yield, repair/healing and production curves; lab-specific upgrade cost/time multiplier |
+| **Fixes** | Shift-repeat building placement, zero-damage target filtering, target-type priority, and one-tile extra acquisition range |
 
-The Fixes toggles default to **Off**. Enable the zero-damage filter alongside damage priority if zero-damage target classes should be excluded entirely. These fixes do not implement attack-move or extend acquisition range. Targeting changes also apply to AI.
+The Fixes toggles default to **Off**. Enable the zero-damage filter alongside damage priority if zero-damage target classes should be excluded entirely. Acquisition Range searches 32 world pixels beyond mobile units' weapon range, within sight, and tries in-range targets first. It does not extend firing range or implement attack-move. Targeting changes also apply to AI.
 
 ## Defaults, saving and compatibility
 
 - **Default** is the embedded stock reference; **Saved** is the last saved value. **Delta/Change**, **Unsaved**, **Defaults**, and **Different from defaults** help review edits. Undo/redo use **Ctrl+Z / Ctrl+Y**. High DPI, live resizing and scrollable panels are supported.
-- The five engine-settings tabs use separate `.cfg` files beside the EXE, created on Save/Launch. They create no `.bak` files. Unit edits preserve the original file format and make recovery copies in `UCONFIG/backups`.
+- The six engine-settings tabs use separate `.cfg` files beside the EXE, created on Save/Launch. They create no `.bak` files. Unit edits preserve the original file format and make recovery copies in `UCONFIG/backups`.
 - **Burst Count** saves separately in the matching `UCONFIG_nn_ext.cfg`, with no backups or native-format changes. It controls supported vehicle turrets (the Anaconda defaults to 2), with a limit of 127 shots. Launch game applies the selected preset's extension for the session; changing the multiplayer lobby preset alone does not switch it. See [extended unit settings](docs/UNIT_EXTENSIONS.md) for coverage and file compatibility.
 - Unit file editing works without KWIPv3. **Launch game requires the verified KWIPv3 build below**. The launcher patches only its new process's memory, never the game EXE on disk. Relaunch to apply changes. Saved unit CFG edits remain on disk even when launching the game normally.
 - Some production-building limits remain constrained, and only verified projectile fields are editable. See the feature guides below for exact limits and special cases. The newer gameplay modifications need broader manual testing, especially multiplayer, save/load, AI progression and large armies. Network players need matching settings.
@@ -60,7 +61,7 @@ Other builds, including executables changed by another patcher, are rejected. Th
 
 ## Help and feature details
 
-[Full user guide and troubleshooting](docs/USER_GUIDE.md) · [Unit stats](docs/STAT_REFERENCE.md) · [Extended unit settings](docs/UNIT_EXTENSIONS.md) · [Overrides](docs/OVERRIDES.md) · [Tech unlocks](docs/TECH_UNLOCKS.md) · [Projectiles](docs/PROJECTILES.md) · [Fixes](docs/FIXES.md) · [Changelog](CHANGELOG.md)
+[Full user guide and troubleshooting](docs/USER_GUIDE.md) · [Unit stats](docs/STAT_REFERENCE.md) · [Extended unit settings](docs/UNIT_EXTENSIONS.md) · [Overrides](docs/OVERRIDES.md) · [Tech unlocks](docs/TECH_UNLOCKS.md) · [Projectiles](docs/PROJECTILES.md) · [Upgrades](docs/UPGRADES.md) · [Fixes](docs/FIXES.md) · [Changelog](CHANGELOG.md)
 
 For bug reports, use [Issues](https://github.com/AndersonHK/KKND2-Unit-Editor/issues). Include the editor version, Windows/DPI, relevant settings and steps to reproduce. Report gameplay issues with the selected unit configuration and enabled fixes.
 

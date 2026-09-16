@@ -13,7 +13,8 @@ from .fixes import validate as validate_fixes
 from .fixes import FIXES
 from .projectiles import validate as validate_projectiles
 from .campaign import command_line
-from . import unit_extensions
+from . import unit_extensions, upgrades_patch
+from .upgrades import validate as validate_upgrades
 
 SUPPORTED_SHA256 = 'ebc91ca929e69c1529de9230d28ddb5c4b1534f13074458dd03b805677817d44'
 
@@ -37,7 +38,7 @@ def apply_limits(read, write, values):
     return len(plan)
 
 
-def apply_configuration(read, write, values, overrides, allocate, seal, unlocks=None, projectiles=None, fixes=None, extensions=None):
+def apply_configuration(read, write, values, overrides, allocate, seal, unlocks=None, projectiles=None, fixes=None, extensions=None, upgrades=None):
     """Validate every feature's original sites before any process memory write."""
     validate(values)
     for spec in BUILDINGS.values():
@@ -56,6 +57,8 @@ def apply_configuration(read, write, values, overrides, allocate, seal, unlocks=
     fixes = fixes if fixes is not None else {k: s['default'] for k, s in FIXES.items()}
     validate_fixes(fixes)
     fixes_patch.validate_memory(read, fixes, values)
+    upgrades_patch.validate_memory(read, upgrades, overrides)
+    plan.extend(upgrades_patch.table_plan(upgrades))
     if overrides is not None:
         validate_overrides(overrides)
         overrides_patch.validate_memory(read)
@@ -67,6 +70,8 @@ def apply_configuration(read, write, values, overrides, allocate, seal, unlocks=
             if read(address, len(blob)) != blob:
                 raise OSError('Override helper verification failed.')
             seal(address, len(blob))
+        if upgrades_patch.changed(upgrades, 'lab_upgrade'):
+            override_plan = [item for item in override_plan if item[0] != 0x494528]
         plan.extend(override_plan)
     if unlocks is not None:
         data, _ = tech_unlocks.table_bundle(unlocks)
@@ -89,7 +94,7 @@ def apply_configuration(read, write, values, overrides, allocate, seal, unlocks=
                 raise OSError('Projectile helper verification failed.')
             seal(address, len(blob))
         plan.extend(projectile_plan)
-    plan.extend(fixes_patch.prepare(read, write, allocate, seal, fixes, values))
+    plan.extend(fixes_patch.prepare(read, write, allocate, seal, fixes, values, upgrades))
     for address, before, after in plan:
         write(address, after)
         if read(address, len(after)) != after:
@@ -97,7 +102,7 @@ def apply_configuration(read, write, values, overrides, allocate, seal, unlocks=
     return building_count, len(plan) - building_count
 
 
-def launch_game(executable, values, dry_run=False, overrides=None, unlocks=None, projectiles=None, fixes=None, campaign_config=None, extensions=None):
+def launch_game(executable, values, dry_run=False, overrides=None, unlocks=None, projectiles=None, fixes=None, campaign_config=None, extensions=None, upgrades=None):
     """Create our own suspended process, verify/patch, and only then resume it.
 
     dry_run verifies a real suspended process and terminates it without running
@@ -116,6 +121,8 @@ def launch_game(executable, values, dry_run=False, overrides=None, unlocks=None,
         validate_projectiles(projectiles)
     if fixes is not None:
         validate_fixes(fixes)
+    if upgrades is not None:
+        validate_upgrades(upgrades)
     if extensions is not None:
         unit_extensions.validate(extensions)
     if hashlib.sha256(exe.read_bytes()).hexdigest() != SUPPORTED_SHA256:
@@ -193,7 +200,7 @@ def launch_game(executable, values, dry_run=False, overrides=None, unlocks=None,
             if not k.FlushInstructionCache(pi.hProcess, address, size):
                 raise C.WinError(C.get_last_error())
 
-        changed, override_count = apply_configuration(read, write, values, overrides, allocate, seal, unlocks, projectiles, fixes, extensions)
+        changed, override_count = apply_configuration(read, write, values, overrides, allocate, seal, unlocks, projectiles, fixes, extensions, upgrades)
         if not dry_run:
             if k.ResumeThread(pi.hThread) == 0xffffffff:
                 raise C.WinError(C.get_last_error())

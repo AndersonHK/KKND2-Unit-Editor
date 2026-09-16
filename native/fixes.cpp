@@ -6,6 +6,7 @@
 extern "C" {
     __declspec(dllexport) Word zero_damage = 0;
     __declspec(dllexport) Word damage_priority = 0;
+    __declspec(dllexport) Word acquisition_range = 0;
     __declspec(dllexport) Selector original_near = 0;
     __declspec(dllexport) Selector original_wide = 0;
     __declspec(dllexport) Validator original_validate = 0;
@@ -75,8 +76,35 @@ static int select_target(Selector original, Unit* unit, Target* target) {
     if (!result) { target->type = 0; target->object = 0; target->identity = 0; target->z = 0; }
     return result;
 }
-EXPORT int __fastcall select_near(Unit* unit, Target* target) { return select_target(original_near, unit, target); }
-EXPORT int __fastcall select_wide(Unit* unit, Target* target) { return select_target(original_wide, unit, target); }
+static int acquire(Selector original, Unit* unit, Target* target) {
+    const Byte* definition = field<const Byte*>(unit, kwip::definition);
+    if (!acquisition_range || !definition || field<unsigned short>(definition, 0xe4) >= 4 || !weapon(unit))
+        return select_target(original, unit, target);
+    // Only automatic selection sees the extra radius. Keep the native LOS,
+    // alliance, minimum-range and weapon restrictions. Actual attack validation
+    // runs after these pointers are restored and retains normal firing range.
+    int result = select_target(original_near, unit, target);
+    if (result) return result;
+    Word local_definition[0x110 / 4];
+    for (int i = 0; i < 0x110 / 4; ++i) local_definition[i] = field<Word>(definition, i * 4);
+    local_definition[0x24 / 4] += 32;
+    Byte* turret = field<Byte*>(unit, kwip::turret);
+    const Byte* turret_definition = turret ? field<const Byte*>(turret, kwip::turret_definition) : 0;
+    Word local_turret[0x38 / 4];
+    if (turret_definition) {
+        for (int i = 0; i < 0x38 / 4; ++i) local_turret[i] = field<Word>(turret_definition, i * 4);
+        local_turret[0x2c / 4] += 32;
+        *reinterpret_cast<const void**>(turret + kwip::turret_definition) = local_turret;
+    }
+    *reinterpret_cast<const void**>(reinterpret_cast<Byte*>(unit) + kwip::definition) = local_definition;
+    result = select_target(original_near, unit, target);
+    *reinterpret_cast<const void**>(reinterpret_cast<Byte*>(unit) + kwip::definition) = definition;
+    if (turret_definition)
+        *reinterpret_cast<const void**>(turret + kwip::turret_definition) = turret_definition;
+    return result;
+}
+EXPORT int __fastcall select_near(Unit* unit, Target* target) { return acquire(original_near, unit, target); }
+EXPORT int __fastcall select_wide(Unit* unit, Target* target) { return acquire(original_wide, unit, target); }
 
 static int __fastcall income_building_limit(const Byte* ai, Word slot) {
     const Byte* faction = field<const Byte*>(ai, 8);
@@ -153,3 +181,4 @@ EXPORT __declspec(naked) void shift_placement() {
         ret
     }
 }
+#include "upgrades.h"

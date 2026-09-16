@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0 — pending manual testing
+
+- Add Upgrades: six levels of refining yield, repair/healing rates, production speed by producer class, and research-lab self-upgrade cost/time multipliers.
+- Preserve existing research base/step controls; lab multiplier columns select the destination tier.
+- Add opt-in Acquisition Range: mobile search extends one tile within sight, with in-range targets first and unchanged firing range.
+- Add versioned, ignored upgrades.cfg with defaults, comparisons, history and no backups; import old Fixes files with the new toggle off.
+- Keep two-line row labels, shared toolbar and live high-DPI resizing.
+
 ## 0.2.2 - 2026-09-11
 
 - Add Burst Count to Unit editor for supported vehicle turrets, including the Anaconda's actual two-shot default. Integrate defaults, comparisons, filtering, undo/redo and saving with native unit edits.

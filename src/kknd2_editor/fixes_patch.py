@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import struct
 from .fixes import validate
+from . import upgrades_patch
 from .building_limits import validate as validate_limits
 
 HOOKS = {
@@ -24,7 +25,7 @@ CALL_HOOKS = {'shift_placement', 'ai_solar_limit', 'ai_thermal_limit'}
 def selected_hooks(values, limits=None):
     validate(values)
     names = []
-    if values['damage_priority']: names.extend(('select_near', 'select_wide'))
+    if values['damage_priority'] or values['acquisition_range']: names.extend(('select_near', 'select_wide'))
     if values['damage_priority'] or values['zero_damage_filter']: names.append('validate_target')
     if values['shift_build']: names.append('shift_placement')
     if limits is not None:
@@ -52,9 +53,11 @@ def branch(address, destination, size, call=False):
     return bytes([0xe8 if call else 0xe9]) + struct.pack('<I', (destination-address-5) & 0xffffffff) + b'\x90'*(size-5)
 
 
-def prepare(read, write, allocate, seal, values, limits=None):
+def prepare(read, write, allocate, seal, values, limits=None, upgrades=None):
     """Write/verify helpers first; return hooks to install after all validation."""
     hooks = selected_hooks(values, limits)
+    upgrade_hooks = upgrades_patch.selected_hooks(upgrades)
+    hooks.update(upgrade_hooks)
     if not hooks: return []
     payload = load_payload()
     size = payload['size']
@@ -79,8 +82,10 @@ def prepare(read, write, allocate, seal, values, limits=None):
         struct.pack_into('<I', image, offset, value)
     set_export('zero_damage', int(values['zero_damage_filter']))
     set_export('damage_priority', int(values['damage_priority']))
+    set_export('acquisition_range', int(values['acquisition_range']))
+    upgrades_patch.fill_payload(image, exports, upgrades)
     cursor = size
-    originals = {'select_near': 'original_near', 'select_wide': 'original_wide', 'validate_target': 'original_validate'}
+    originals = {'select_near': 'original_near', 'select_wide': 'original_wide', 'validate_target': 'original_validate', 'production_bill': 'original_production'}
     plan = []
     for name, (site, before) in hooks.items():
         if name in originals:
@@ -89,7 +94,7 @@ def prepare(read, write, allocate, seal, values, limits=None):
             image[cursor:cursor+len(code)] = code
             set_export(originals[name], address+cursor)
             cursor += 32
-        plan.append((site, before, branch(site, address+exports[name], len(before), name in CALL_HOOKS)))
+        plan.append((site, before, branch(site, address+exports[name], len(before), name in CALL_HOOKS or (name in upgrade_hooks and name not in originals))))
     write(address, bytes(image))
     if read(address, len(image)) != image: raise OSError('Native fixes verification failed.')
     for section in payload['sections']:

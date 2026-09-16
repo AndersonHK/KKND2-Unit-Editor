@@ -56,9 +56,9 @@ BASIC USE
    configuration selector, then Launch game. It uses the preset display
    name, not its filename. The checkbox starts off each editor session.
 
-Version @VERSION@ is a testing build: separate turret Burst Count, larger
-campaign checkbox, Shift cap correction and AI solar/thermal ceilings.
-In-match validation is still needed before sharing as a tested release.
+Version @VERSION@ is a testing build: six-level building upgrade curves
+and optional extra acquisition range. In-match validation is still needed
+before sharing as a tested release.
 
 Burst Count appears below Bullet Count for supported vehicle turrets.
 The Anaconda defaults to 2 shots. The allowed range is 1-127; a dash means
@@ -75,12 +75,22 @@ Overrides       Research costs/times, tanker capacity, oil transfer,
                 passive incomes and building placement reach.
 Tech unlocks    Required producer research level for units/buildings.
 Projectiles     Supported projectile speeds and homing expiration times.
-Fixes           Shift build, zero-damage target filter, damage-type priority.
+Upgrades        Six-level oil yield, healing, production speed and lab
+                self-upgrade cost/time multipliers.
+Fixes           Shift build, zero-damage filter, damage-type priority,
+                and mobile acquisition one tile beyond weapon range.
 
 Fixes default to OFF. Enable them individually. For damage-type priority,
 enable the zero-damage filter too if useless target classes must be skipped.
 These are acquisition rules, not attack-move or an increased sight radius.
 Targeting changes also affect AI. Network players need matching settings.
+
+In Upgrades, lab columns are destination levels: level 5 = 2 makes lab
+4-to-5 cost twice as much cash and time. Research base/steps stay in
+Overrides. Production 2 means approximately half the build time, without
+changing cost. All new multipliers default to 1. Acquisition tries targets
+in firing range first, then one extra tile, within sight; it does not
+change firing range. Existing Fixes files import with this toggle off.
 
 REVIEW AND UNDO
 ---------------
@@ -92,7 +102,7 @@ Reset defaults is undoable and remains pending until you save.
 
 FILES AND COMPATIBILITY
 -----------------------
-Building limits, overrides, tech unlocks, projectiles and fixes use separate
+Building limits, overrides, tech unlocks, projectiles, upgrades and fixes use separate
 CFG files created on Save/Launch. They do not create .bak files.
 Extended unit values use UCONFIG_nn_ext.cfg beside the native preset;
 keep both files together when sharing. Extensions create no backups.

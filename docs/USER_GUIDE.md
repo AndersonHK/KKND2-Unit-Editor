@@ -40,6 +40,7 @@ pythonw "Launch Editor.pyw" --limits-file ".\my-limits.cfg"
 pythonw "Launch Editor.pyw" --overrides-file ".\my-overrides.cfg"
 pythonw "Launch Editor.pyw" --unlocks-file ".\my-unlocks.cfg"
 pythonw "Launch Editor.pyw" --projectiles-file ".\my-projectiles.cfg"
+pythonw "Launch Editor.pyw" --upgrades-file ".\my-upgrades.cfg"
 pythonw "Launch Editor.pyw" --fixes-file ".\my-fixes.cfg"
 ```
 
@@ -49,7 +50,7 @@ For a persistent location without editing source, set the Windows user environme
 
 ## Editing and reviewing changes
 
-The shared top toolbar stays in the same place on all six tabs. **Save**, **Unsaved**, **Defaults**, **Open…**, and **Folder…** act on the selected tab.
+The shared top toolbar stays in the same place on all seven tabs. **Save**, **Unsaved**, **Defaults**, **Open…**, and **Folder…** act on the selected tab.
 
 On the unit tab, search by English name or internal game ID, filter by faction, and select a unit or building. Each stat shows its stored unit and editor maximum. A `-` means the field is unavailable and cannot be edited. Title text and internal identifiers are preserved.
 
@@ -115,19 +116,24 @@ The launcher also corrects a research progress-bar denominator mismatch. See [ga
 
 ## Fixes
 
-The **Fixes** tab offers three independent toggles, each with two description lines and comparisons with default and saved values:
+The **Fixes** tab offers four independent toggles, each with two description lines and comparisons with default and saved values:
 
+- **Acquisition Range:** mobile units search one tile beyond weapon range, within sight, after trying in-range targets. Actual firing range is unchanged.
 - **Shift build:** hold Shift while placing to keep the same building selected for the next click. Native availability and placement restrictions still apply.
 - **Zero damage acts as a target filter:** reject target classes with zero raw weapon damage, including checks on targets outside firing range.
 - **Prioritize target types by damage:** during automatic acquisition, prefer the highest-damage eligible class. Equal values keep the native selection rules; explicit target orders are not replaced by the ranking.
 
-All three default to **Off**. Enable the zero-damage filter alongside damage priority if zero-damage classes should never be considered. These settings use **fixes.cfg**, schema `kknd2-editor-fixes`, version 1, with three boolean values in a `fixes` mapping. The [stock example](../examples/fixes.example.cfg) is included; personal files are ignored and saves produce no backups.
+All four default to **Off**. Enable the zero-damage filter alongside damage priority if zero-damage classes should never be considered. These settings use **fixes.cfg**, schema `kknd2-editor-fixes`, version 2, with four boolean values in a `fixes` mapping. The [stock example](../examples/fixes.example.cfg) is included; personal files are ignored and saves produce no backups.
 
-A small compiled C++ module handles these rules inside the game, with no Python polling or compiler requirement for players. The launcher verifies the supported game before applying it. Targeting changes affect AI as well as human players. See [Behavior fixes](FIXES.md) for exact scope, native implementation, rebuilding and manual test cases. This does not add attack-move or expand acquisition range.
+A small compiled C++ module handles these rules inside the game, with no Python polling or compiler requirement for players. The launcher verifies the supported game before applying it. Targeting changes affect AI as well as human players. See [Behavior fixes](FIXES.md) for exact scope, native implementation, rebuilding and manual test cases. Acquisition Range adds a one-tile search margin for mobile units within sight, with in-range targets first; it does not change firing range or add attack-move.
+
+## Upgrades
+
+The **Upgrades** tab has six columns for tech levels 0–5. Edit oil yield, repair/healing rate, production speed for four producer classes, and the cost/time multiplier for upgrading the research lab itself. Research base/step settings stay in Overrides. Each row uses a two-line name/units label. Defaults, comparisons, history, filtering and atomic saves work as on the other tabs. See [Upgrades](UPGRADES.md) for units, stock curves, examples and limits.
 
 ## Launching KWIPv3
 
-Click **Launch game** at the bottom right to save **all six tabs** and launch `KWIPv3.exe` with the selected building limits, raw overrides, projectile settings, unlock levels, and fixes. In the multiplayer lobby, **select the unit configuration you edited**: the launcher does not choose it automatically. Successfully saved settings remain saved even if launch fails.
+Click **Launch game** at the bottom right to save **all seven tabs** and launch `KWIPv3.exe` with the selected building limits, raw overrides, projectile settings, unlock levels, and fixes. In the multiplayer lobby, **select the unit configuration you edited**: the launcher does not choose it automatically. Successfully saved settings remain saved even if launch fails.
 
 The launcher verifies the executable's SHA-256, starts a suspended process, validates all expected original values/instructions/tables, writes and verifies the selected changes, then resumes it. The compiled fixes module and small native helpers handle the behavior toggles and changed transfer/research-step calculations and per-weapon homing expiration; replacement unlock lists retain faction and producer membership. These run inside the game, without a Python polling loop. A validation/patch failure terminates the newly created child process. It never patches the executable on disk. Starting the game outside this editor therefore uses its original building limits, research/oil/placement rules, projectile settings, tech unlocks, and targeting/placement behavior. Saving settings does not alter an already running game. The new overrides, unlocks and fixes still need manual gameplay testing, including AI progression, save/load, and consecutive matches.
 
@@ -147,7 +153,7 @@ The editor retains the original byte buffer and replaces only explicitly edited 
 
 Before a changed unit save, the editor verifies a timestamped copy in **UCONFIG\backups**, validates the replacement, flushes a temporary file beside the original, and atomically replaces the original. If the source changed externally, a backup cannot be made, or replacement fails, an error is shown and pending edits remain available.
 
-To recover a unit configuration, close both editors, choose the matching filename and timestamp in `UCONFIG\backups`, and copy it back into `UCONFIG` under the original `.cfg` name. Keep the backup intact. These unit backups are separate from the five application settings files, which have no automatic backups.
+To recover a unit configuration, close both editors, choose the matching filename and timestamp in `UCONFIG\backups`, and copy it back into `UCONFIG` under the original `.cfg` name. Keep the backup intact. These unit backups are separate from the six application settings files, which have no automatic backups.
 
 ## Window scaling and troubleshooting
 

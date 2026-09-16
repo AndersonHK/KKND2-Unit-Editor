@@ -124,6 +124,37 @@ class World:
 
 @skipUnless(Uc and os.environ.get('KKND2_TEST_EXE'), 'Optional unicorn/pefile and KKND2_TEST_EXE required')
 class NativeFixesTests(TestCase):
+    def test_acquisition_extra_tile_and_original_firing_range(self):
+        for wide in (False, True):
+            for turret in (False, True):
+                w = World(self.image, settings(acquisition_range=True), turret=turret)
+                outside = w.add(1, (25,16))
+                self.assertEqual(w.select(wide), outside)
+                self.assertEqual(w.validate(outside), 1)
+                self.assertEqual(w.get(w.unit+0x60), w.unit+0x1000)
+                self.assertEqual(w.get(w.unit+0x1000+0x24), 256)
+                if turret:
+                    self.assertEqual(w.get(w.unit+0x4000+0x10), w.unit+0x5000)
+                    self.assertEqual(w.get(w.unit+0x5000+0x2c), 256)
+                w = World(self.image, settings(acquisition_range=True), turret=turret)
+                w.add(1, (26,16))
+                self.assertIsNone(w.select(wide))
+
+    def test_acquisition_in_range_precedes_damage_priority_and_respects_visibility(self):
+        for wide in (False, True):
+            w = World(self.image, settings(acquisition_range=True, damage_priority=True, zero_damage_filter=True))
+            close = w.add(0)
+            w.add(2, (25,16))
+            self.assertEqual(w.select(wide), close)
+            w.set_damage((0,20,30,0,0))
+            self.assertNotEqual(w.select(wide), close)
+            for condition in ('hidden', 'allied', 'sight', 'building'):
+                w = World(self.image, settings(acquisition_range=True))
+                w.add(2, (25,16), hidden=condition=='hidden', player=1 if condition=='allied' else 2)
+                if condition == 'sight': w.put(w.unit+0x1000+0x20, 8)
+                if condition == 'building': w.cpu.mem_write(w.unit+0x1000+0xe4, struct.pack('<H', 4))
+                self.assertIsNone(w.select(wide), condition)
+
     @classmethod
     def setUpClass(cls):
         import hashlib

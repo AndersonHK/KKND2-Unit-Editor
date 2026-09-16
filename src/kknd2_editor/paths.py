@@ -50,3 +50,7 @@ def default_projectiles_path():
 
 def default_fixes_path():
     return PROJECT_ROOT / 'fixes.cfg'
+
+
+def default_upgrades_path():
+    return PROJECT_ROOT / 'upgrades.cfg'

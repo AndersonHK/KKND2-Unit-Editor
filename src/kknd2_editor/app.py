@@ -15,6 +15,8 @@ from .projectiles_ui import ProjectilesPage
 from .projectiles import FIELDS as PROJECTILE_FIELDS
 from .unlocks_ui import UnlocksPage
 from .fixes_ui import FixesPage
+from .upgrades_ui import UpgradesPage
+from .upgrades import UPGRADES
 from .fixes import FIXES
 from . import __version__
 from .overrides import OVERRIDES
@@ -23,7 +25,7 @@ from . import unit_extensions
 from tkinter import ttk, filedialog, messagebox
 from tkinter import font as tkfont
 
-from .paths import default_folder, default_limits_path, default_overrides_path, default_unlocks_path, default_projectiles_path, default_fixes_path, find_game_dir
+from .paths import default_folder, default_limits_path, default_overrides_path, default_unlocks_path, default_projectiles_path, default_fixes_path, default_upgrades_path, find_game_dir
 FIELDS = ("Cost", "Build-Time", "Hitpoints", "View-Range", "Speed", "Armour",
           "Accuracy", "Weapon-Range", "Min-Range", "Bullet-Count", "Fire-Delay",
           "Reload-Time", "InfantryDamage", "VehicleDamage", "BeastDamage",
@@ -686,7 +688,7 @@ def enable_dpi_awareness():
 
 
 class Editor(tk.Tk):
-    def __init__(self, folder=None, initial=None, tk_scaling=None, limits_path=None, game_dir=None, overrides_path=None, unlocks_path=None, projectiles_path=None, fixes_path=None):
+    def __init__(self, folder=None, initial=None, tk_scaling=None, limits_path=None, game_dir=None, overrides_path=None, unlocks_path=None, projectiles_path=None, fixes_path=None, upgrades_path=None):
         super().__init__()
         self.withdraw()
         self.title(f"KKND2 Unit Editor {__version__}")
@@ -696,6 +698,7 @@ class Editor(tk.Tk):
         self.limits_path = Path(limits_path) if limits_path else default_limits_path()
         self.overrides_path = Path(overrides_path) if overrides_path else default_overrides_path()
         self.unlocks_path = Path(unlocks_path) if unlocks_path else default_unlocks_path()
+        self.upgrades_path = Path(upgrades_path) if upgrades_path else default_upgrades_path()
         self.fixes_path = Path(fixes_path) if fixes_path else default_fixes_path()
         self.projectiles_path = Path(projectiles_path) if projectiles_path else default_projectiles_path()
         self._resize_pending = False
@@ -959,10 +962,13 @@ class Editor(tk.Tk):
         self.projectiles_page = ProjectilesPage(self, self.notebook, self.projectiles_path,
                                                 {k: s['name'] for k, s in PROJECTILE_FIELDS.items()}, ScrollPanel, FlowBar)
         self.notebook.add(self.projectiles_page, text="  Projectiles  ")
+        self.upgrades_page = UpgradesPage(self, self.notebook, self.upgrades_path,
+                                          {k: s["name"] for k, s in UPGRADES.items()}, ScrollPanel, FlowBar)
+        self.notebook.add(self.upgrades_page, text="  Upgrades  ")
         self.fixes_page = FixesPage(self, self.notebook, self.fixes_path,
                                     {k: s['name'] for k, s in FIXES.items()}, ScrollPanel, FlowBar)
         self.notebook.add(self.fixes_page, text="  Fixes  ")
-        self.settings_pages = (self.limits_page, self.overrides_page, self.unlocks_page, self.projectiles_page, self.fixes_page)
+        self.settings_pages = (self.limits_page, self.overrides_page, self.unlocks_page, self.projectiles_page, self.upgrades_page, self.fixes_page)
         self.notebook.bind("<<NotebookTabChanged>>", self.tab_changed)
         self.command_row.bind('<Configure>', lambda _: self.arrange_commands())
         self.tab_changed()
@@ -992,6 +998,9 @@ class Editor(tk.Tk):
                 self.file_caption.grid()
                 self.page_tabs.grid_forget()
                 self.main_panel.columnconfigure(0, weight=0, minsize=self.px(330))
+                self.unit_page.configure(padding=self.px(6))
+                self.actions.grid_configure(pady=(self.px(8), 0))
+                self.footer.grid_configure(pady=(self.px(7), 0))
                 self.main_panel.columnconfigure(1, weight=1)
                 self.main_panel.rowconfigure(0, weight=0)
                 self.main_panel.rowconfigure(1, weight=1)
@@ -1000,6 +1009,9 @@ class Editor(tk.Tk):
             else:
                 # Leave room for the wrapped tab strip on very small, high-DPI
                 # windows. Stat rows and button padding retain their full size.
+                self.unit_page.configure(padding=self.px(2))
+                self.actions.grid_configure(pady=(self.px(2), 0))
+                self.footer.grid_configure(pady=(self.px(2), 0))
                 self.command_row.grid_configure(pady=(0, self.px(2)))
                 self.configuration_row.grid_configure(pady=(0, self.px(2)))
                 self.app_heading.grid_remove()
@@ -1386,6 +1398,7 @@ class Editor(tk.Tk):
         unlocks = dict(self.unlocks_page.doc.values)
         projectiles = dict(self.projectiles_page.doc.values)
         fixes = dict(self.fixes_page.doc.values)
+        upgrades = dict(self.upgrades_page.doc.values)
         campaign_config = self.path if self.campaign_stats.get() else None
         extensions = self.config_doc.extension_values()
         config_name = self.config_doc.name
@@ -1395,7 +1408,7 @@ class Editor(tk.Tk):
         results = queue.Queue()
         def worker():
             try:
-                results.put((launch_game(executable, values, overrides=overrides, unlocks=unlocks, projectiles=projectiles, fixes=fixes, campaign_config=campaign_config, extensions=extensions), None))
+                results.put((launch_game(executable, values, overrides=overrides, unlocks=unlocks, projectiles=projectiles, fixes=fixes, campaign_config=campaign_config, extensions=extensions, upgrades=upgrades), None))
             except Exception as exc:
                 results.put((None, str(exc)))
         threading.Thread(target=worker, daemon=True).start()
@@ -1431,8 +1444,9 @@ def main():
     parser.add_argument("--overrides-file", type=Path, help="Raw engine overrides JSON .cfg (default: checkout root)")
     parser.add_argument("--unlocks-file", type=Path, help="Tech unlocks JSON .cfg (default: checkout root)")
     parser.add_argument("--projectiles-file", type=Path, help="Projectile settings JSON .cfg (default: checkout root)")
+    parser.add_argument("--upgrades-file", type=Path, help="Per-tier building benefits JSON .cfg (default: checkout root)")
     parser.add_argument("--fixes-file", type=Path, help="Behavior fixes JSON .cfg (default: checkout root)")
     parser.add_argument("--version", action="version", version="KKND2 Unit Editor " + __version__)
     args = parser.parse_args()
     enable_dpi_awareness()
-    Editor(args.folder, args.file, limits_path=args.limits_file, game_dir=args.game_dir, overrides_path=args.overrides_file, unlocks_path=args.unlocks_file, projectiles_path=args.projectiles_file, fixes_path=args.fixes_file).mainloop()
+    Editor(args.folder, args.file, limits_path=args.limits_file, game_dir=args.game_dir, overrides_path=args.overrides_file, unlocks_path=args.unlocks_file, projectiles_path=args.projectiles_file, fixes_path=args.fixes_file, upgrades_path=args.upgrades_file).mainloop()

@@ -56,7 +56,7 @@ class FixesTests(TestCase):
     def test_compiled_payload_matches_source(self):
         native = Path(__file__).resolve().parents[1]/'native'
         digest = hashlib.sha256(b''.join((native/name).read_bytes().replace(b'\r\n', b'\n')
-                                        for name in ('fixes.cpp', 'kwip_abi.h'))).hexdigest()
+                                        for name in ('fixes.cpp', 'kwip_abi.h', 'upgrades.h'))).hexdigest()
         self.assertEqual(fixes_patch.load_payload()['source_sha256'], digest)
 
     def test_toggle_ui_shared_toolbar_filter_history_and_save(self):
@@ -71,7 +71,7 @@ class FixesTests(TestCase):
                 app.notebook.select(page)
                 app.update()
                 self.assertEqual(toolbar, [(str(b), b.winfo_rootx(), b.winfo_rooty()) for b in app.toolbar.buttons])
-                self.assertEqual(len(page.entries), 3)
+                self.assertEqual(len(page.entries), 4)
                 for key, entry in page.entries.items():
                     self.assertEqual(entry.winfo_class(), 'TCheckbutton')
                     self.assertEqual(len(page.display_name(key).splitlines()), 3)

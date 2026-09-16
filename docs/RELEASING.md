@@ -21,7 +21,7 @@ PyInstaller is only a build dependency. The [official packaging guide](https://p
 ## Check before sharing
 
 1. Run `python -m unittest discover -s tests -v`. Use the optional native tests with `unicorn`, `pefile` and `KKND2_TEST_EXE` when changing engine behavior.
-2. Extract the release into an empty writable folder and launch the EXE. Confirm the six tabs, version and GUI-only startup. Test from a working directory different from the EXE folder. Personal settings must stay beside the EXE, outside its temporary runtime extraction directory.
+2. Extract the release into an empty writable folder and launch the EXE. Confirm the seven tabs, version and GUI-only startup. Test from a working directory different from the EXE folder. Personal settings must stay beside the EXE, outside its temporary runtime extraction directory.
 3. Verify the ZIP's two filenames and SHA-256 sidecar. Open README.txt and follow the installation steps. Check that `fixes_native.json` is included in the packaged application.
 4. Manually test edited units, launch overrides and behavior fixes in-game before declaring gameplay validation complete. Automated and suspended-process tests do not replace matches.
 5. Commit with a descriptive message when authorized. Upload/push or publish a GitHub Release only when requested. This packaging script does not publish anything.

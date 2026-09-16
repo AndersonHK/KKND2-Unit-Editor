@@ -14,6 +14,7 @@ class ResponsiveLayoutTests(TestCase):
                     app = make_editor(tk_scaling=96 / 72 * scaling,
                                         limits_path=Path(folder) / 'limits.cfg')
                     try:
+                        app.maxsize(8000, 5000)  # Permit wide-layout checks on a smaller test desktop.
                         app.update()
                         labels = [w for w in app.stats.content.winfo_children()
                                   if int(w.grid_info().get('column', -1)) == 0
@@ -27,7 +28,7 @@ class ResponsiveLayoutTests(TestCase):
                             self.assertEqual(label.grid_info()['pady'], app.px(7))
 
                         natural = app.stats.content.winfo_reqwidth()
-                        # Six tabs require more horizontal space than the original two.
+                        # Seven tabs require more horizontal space than the original two.
                         controls = sum(b.winfo_reqwidth() for b in app.toolbar.buttons + app.notebook.bar.buttons)
                         previous_width = previous_saved_x = None
                         # Check intermediate sizes, not just the final drag position.

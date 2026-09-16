@@ -81,7 +81,8 @@ def main():
                         '/NXCOMPAT', '/OPT:REF', '/OPT:ICF', '/Brepro', '/OUT:'+str(dll), str(obj)], check=True, env=environment)
         payload = extract(dll.read_bytes())
     payload['source_sha256'] = hashlib.sha256((source/'fixes.cpp').read_bytes().replace(b'\r\n', b'\n') +
-                                             (source/'kwip_abi.h').read_bytes().replace(b'\r\n', b'\n')).hexdigest()
+                                             (source/'kwip_abi.h').read_bytes().replace(b'\r\n', b'\n') +
+                                             (source/'upgrades.h').read_bytes().replace(b'\r\n', b'\n')).hexdigest()
     output = source.parent/'src'/'kknd2_editor'/'fixes_native.json'
     output.write_text(json.dumps(payload, indent=2)+'\n', encoding='utf-8')
     print('Built', output.name, 'from', len(payload['sections']), 'sections.')

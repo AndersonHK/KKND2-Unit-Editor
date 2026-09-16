@@ -1,8 +1,16 @@
 # Behavior fixes
 
-The **Fixes** tab contains three independent toggles. All default to **Off**, preserving stock KWIPv3 behavior. Each row has a name and two description lines, plus the current toggle, stock default, change from default and saved value. The shared toolbar and Undo, Redo, Revert saved, Reset defaults and Different from defaults work as on Overrides.
+The **Fixes** tab contains four independent toggles. All default to **Off**, preserving stock KWIPv3 behavior. Each row has a name and two description lines, plus the current toggle, stock default, change from default and saved value. The shared toolbar and Undo, Redo, Revert saved, Reset defaults and Different from defaults work as on Overrides.
 
-Save creates `fixes.cfg` beside the launchers unless another location is selected with Open, Folder or `--fixes-file`. Launch game saves and applies it with the other tabs. Files are UTF-8 JSON, atomically replaced with external-change detection and no `.bak` files. Personal settings are ignored by Git. See [the complete stock example](../examples/fixes.example.cfg). The schema is `kknd2-editor-fixes`, version 1; all three keys are required and accept only JSON `true` or `false`, not 0/1 or strings.
+Save creates `fixes.cfg` beside the launchers unless another location is selected with Open, Folder or `--fixes-file`. Launch game saves and applies it with the other tabs. Files are UTF-8 JSON, atomically replaced with external-change detection and no `.bak` files. Personal settings are ignored by Git. See [the complete stock example](../examples/fixes.example.cfg). The schema is `kknd2-editor-fixes`, version 2; all four keys are required and accept only JSON `true` or `false`, not 0/1 or strings.
+
+Version 1 files import automatically with Acquisition Range off. They are upgraded only on Save.
+
+## Acquisition Range
+
+Mobile units try the normal firing-range search first. If no eligible target is found, they search another **32 world pixels (one tile)**, capped by sight and the existing visibility/line-of-sight, alliance, minimum-range and weapon checks. Actual firing range stays unchanged: a unit must move into firing range to shoot. Buildings and defenses keep their original search.
+
+With damage priority enabled, classes are ranked separately inside each pass: any eligible in-range target wins before a stronger class in the extra tile. The original tie-breaking still applies within a pass. Existing targets and explicit attack orders are not continually replaced. This is acquisition assistance, not attack-move or a complete rewrite of pursuit. Both mobile near and wide selectors use the bounded search when this toggle is on; this also limits Fight mode acquisition to that radius.
 
 ## Shift build
 
@@ -28,7 +36,7 @@ During automatic acquisition, search target classes in descending order of the a
 
 Both the nearby and broader native selectors are wrapped. Each pass keeps the original range, minimum range, visibility, alliance and attack-compatibility checks. A more damaging class outside the native valid range does not win over a valid target in range. The original broader selector searches ground targets; this fix does not add aircraft to that selector. The nearby selector retains its ground/air scanning capability. Turret weapons use their own damage table, and values are read from the running game after the selected UCONFIG has loaded.
 
-An explicit target order is not replaced by this ranking. Existing targets are not continually interrupted simply because another target enters range; ranking applies when the game acquires a target. This is not attack-move, an expanded acquisition radius, or a rewrite of Fight mode's movement logic. Enable the zero-damage toggle too if zero-damage types must be excluded entirely; priority alone leaves them as the last available class.
+An explicit target order is not replaced by this ranking. Existing targets are not continually interrupted simply because another target enters range; ranking applies when the game acquires a target. Damage priority alone does not expand the acquisition radius or rewrite Fight mode movement; enable Acquisition Range separately for the extra tile. Enable the zero-damage toggle too if zero-damage types must be excluded entirely; priority alone leaves them as the last available class.
 
 Targeting fixes affect **every player, including AI**. Network participants need the same gameplay settings/module. Multiplayer, save/load and sustained large-army gameplay still need manual testing.
 

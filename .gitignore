@@ -56,3 +56,8 @@ Desktop.ini
 # Local standalone release tooling; the shareable ZIP is tracked.
 .venv-build/
 *.spec
+
+# Personal per-tier building benefits
+upgrades.cfg
+!examples/upgrades.example.cfg
+.upgrades-*.tmp

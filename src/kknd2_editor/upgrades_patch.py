@@ -4,6 +4,7 @@ from .upgrades import UPGRADES, validate
 from .overrides import OVERRIDES
 
 HOOKS = {
+    'player_construction': (0x4652b7, bytes.fromhex('8b 55 d4 66 89 42 12')),
     'production_bill': (0x45ee4f, bytes.fromhex('55 8b ec 83 ec 1c')),
     'ai_production': (0x419a89, bytes.fromhex('8b 55 e0 89 42 44')),
     'ai_construction': (0x419c6d, bytes.fromhex('8b 55 c4 66 89 82 12 49 00 00')),
@@ -27,7 +28,7 @@ def selected_hooks(values):
     validate(values)
     names = []
     if any(changed(values, row) for row in PRODUCTION_ROWS):
-        names.extend(('production_bill', 'ai_production', 'ai_construction'))
+        names.extend(('production_bill', 'ai_production', 'ai_construction', 'player_construction'))
     if changed(values, 'lab_upgrade'):
         names.extend(('lab_start', 'lab_bar', 'lab_resume', 'ai_lab'))
     if changed(values, 'repair_rate'): names.append('repair_tier')

@@ -30,8 +30,9 @@ FIELDS = ("Cost", "Build-Time", "Hitpoints", "View-Range", "Speed", "Armour",
           "Accuracy", "Weapon-Range", "Min-Range", "Bullet-Count", "Fire-Delay",
           "Reload-Time", "InfantryDamage", "VehicleDamage", "BeastDamage",
           "BuildingDamage", "AircraftDamage")
-EDITOR_FIELDS = FIELDS + ("Burst-Count",)
+EDITOR_FIELDS = FIELDS + ("Burst-Count", "Armor-Type")
 BURST_COLUMN = len(FIELDS)
+ARMOR_COLUMN = len(FIELDS) + 1
 FACTIONS = {"SURV": "Survivors", "MUTE": "Evolved", "ROBOT": "Series 9"}
 
 
@@ -49,6 +50,8 @@ FIELD_UNITS = (
 )
 
 def field_hint(column):
+    if column == ARMOR_COLUMN:
+        return "incoming damage category (extended enum)"
     if column == BURST_COLUMN:
         return "shots per turret burst (extended) | 1–127"
     return f"{FIELD_UNITS[column]} | max {FIELD_MAXIMUMS[column]:,}"
@@ -353,14 +356,25 @@ class ExtendedConfig(Config):
         super().__init__(raw)
         self.path = Path(path)
         self.extensions = unit_extensions.UnitExtensions(path, {u.identifier for u in self.units})
-        self.units = [Unit(u.identifier, u.cells + (Cell(-1, 3, str(
-            self.extensions.units.get(u.identifier, {}).get('burst_count',
-                unit_extensions.BURSTS.get(u.identifier, (None, None, '-'))[2]))),))
-            for u in self.units]
+        units = []
+        for unit in self.units:
+            custom = self.extensions.units.get(unit.identifier, {})
+            burst = custom.get('burst_count', unit_extensions.BURSTS.get(unit.identifier, (None, None, '-'))[2])
+            stock_armor = unit_extensions.ARMOR.get(unit.identifier, (None, None))[1]
+            armor = custom.get('armor_type', stock_armor)
+            cells = (Cell(-1, 3, str(burst)), Cell(-1, 8, unit_extensions.ARMOR_NAMES.get(armor, '-')))
+            units.append(Unit(unit.identifier, unit.cells + cells))
+        self.units = units
 
     def validate(self, row, column, value):
         if column < len(FIELDS):
             return super().validate(row, column, value)
+        if column == ARMOR_COLUMN:
+            if self.units[row].cells[column].original == '-':
+                if value != '-': raise ValueError('This unit has no supported armor type.')
+            elif value not in unit_extensions.ARMOR_TYPES:
+                raise ValueError('Armor Type: choose Infantry, Vehicle, Beast, Aircraft or Building.')
+            return value
         if column != BURST_COLUMN:
             raise ValueError('Unknown extended field.')
         if self.units[row].cells[column].original == '-':
@@ -382,6 +396,11 @@ class ExtendedConfig(Config):
                 value = self.validate(row, BURST_COLUMN, self.value(row, BURST_COLUMN))
                 if int(value) != unit_extensions.BURSTS[unit.identifier][2]:
                     units[unit.identifier] = {'burst_count': int(value)}
+            if unit.identifier in unit_extensions.ARMOR:
+                value = self.validate(row, ARMOR_COLUMN, self.value(row, ARMOR_COLUMN))
+                enum = unit_extensions.ARMOR_TYPES[value]
+                if enum != unit_extensions.ARMOR[unit.identifier][1]:
+                    units.setdefault(unit.identifier, {})['armor_type'] = enum
         return units
 
     def save(self):
@@ -398,7 +417,7 @@ class ExtendedConfig(Config):
         if payload != self.raw:
             native = Config(payload)
             self.raw = payload
-            self.units = [Unit(u.identifier, u.cells + (old.cells[BURST_COLUMN],))
+            self.units = [Unit(u.identifier, u.cells + old.cells[len(FIELDS):])
                           for u, old in zip(native.units, self.units)]
             self.changes = {key: value for key, value in self.changes.items() if key[1] >= len(FIELDS)}
             self.undo_stack.clear()
@@ -540,7 +559,8 @@ def editor_defaults(identifier):
     native = DEFAULTS.get(identifier)
     if native is None:
         return None
-    return native + (str(unit_extensions.BURSTS.get(identifier, (None, None, '-'))[2]),)
+    return native + (str(unit_extensions.BURSTS.get(identifier, (None, None, '-'))[2]),
+                     unit_extensions.ARMOR_NAMES.get(unit_extensions.ARMOR.get(identifier, (None, None))[1], '-'))
 
 class EditorTabs(ttk.Frame):
     """Simple page tabs without native Notebook background repaint propagation."""
@@ -731,6 +751,8 @@ class Editor(tk.Tk):
         self.style.configure("Title.TLabel", font=self.title_font)
         self.style.configure("Invalid.TEntry", foreground="#bd2727")
         self.style.configure("Changed.TEntry", foreground="#005ca8")
+        self.style.map('Changed.TCombobox', foreground=[('readonly', '#005ca8')])
+        self.style.map('Invalid.TCombobox', foreground=[('readonly', '#bd2727')])
         self.configure_button_styles()
         self.configure_campaign_style()
         self.build_ui()
@@ -921,13 +943,15 @@ class Editor(tk.Tk):
             ttk.Label(grid, text=label, foreground="#666666").grid(row=0, column=col, sticky="w" if col == 0 else "e", padx=p(7), pady=p(7))
         self.values, self.entries, self.original_labels = ([None] * len(EDITOR_FIELDS) for _ in range(3))
         self.default_labels, self.delta_labels = ([None] * len(EDITOR_FIELDS) for _ in range(2))
-        field_order = list(range(10)) + [BURST_COLUMN] + list(range(10, len(FIELDS)))
+        field_order = list(range(6)) + [ARMOR_COLUMN] + list(range(6, 10)) + [BURST_COLUMN] + list(range(10, len(FIELDS)))
         for display_row, i in enumerate(field_order, 1):
             field = EDITOR_FIELDS[i]
             label = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", field).replace("-", " ")
             ttk.Label(grid, text=label + "\n" + field_hint(i), justify="left").grid(row=display_row, column=0, sticky="w", pady=p(7), padx=p(7))
             var = tk.StringVar()
-            entry = ttk.Entry(grid, width=8, textvariable=var, state="disabled")
+            entry = (ttk.Combobox(grid, width=9, textvariable=var, state="disabled",
+                                  values=tuple(unit_extensions.ARMOR_TYPES)) if i == ARMOR_COLUMN else
+                     ttk.Entry(grid, width=8, textvariable=var, state="disabled"))
             entry.grid(row=display_row, column=1, sticky="ew", padx=p(7), pady=p(3))
             entry.bind("<FocusIn>", lambda _event, widget=entry: self.stats.reveal(widget))
             labels = []
@@ -1152,7 +1176,8 @@ class Editor(tk.Tk):
         self.unit_id.set(unit.identifier)
         for i, cell in enumerate(unit.cells):
             self.values[i].set(self.config_doc.value(self.current, i))
-            self.entries[i].configure(state="readonly" if cell.original == "-" else "normal")
+            self.entries[i].configure(state=("disabled" if cell.original == "-" else "readonly") if i == ARMOR_COLUMN else
+                                      "readonly" if cell.original == "-" else "normal")
             self.original_labels[i].configure(text=cell.original)
             self.update_field(i)
         self.loading = False
@@ -1166,10 +1191,11 @@ class Editor(tk.Tk):
         valid = True
         try:
             self.config_doc.validate(self.current, i, value)
-            self.entries[i].configure(style="Changed.TEntry" if value != unit.cells[i].original else "TEntry")
+            suffix = 'TCombobox' if i == ARMOR_COLUMN else 'TEntry'
+            self.entries[i].configure(style="Changed." + suffix if value != unit.cells[i].original else suffix)
         except ValueError:
             valid = False
-            self.entries[i].configure(style="Invalid.TEntry")
+            self.entries[i].configure(style="Invalid.TCombobox" if i == ARMOR_COLUMN else "Invalid.TEntry")
         delta = "n/a" if base is None else "0" if value == base else "changed"
         if base is not None and valid and value.isascii() and value.isdigit() and base.isdigit():
             delta = f"{int(value) - int(base):+d}" if value != base else "0"
@@ -1287,7 +1313,7 @@ class Editor(tk.Tk):
         frame.pack(fill="both", expand=True)
         frame.columnconfigure(0, weight=1)
         frame.rowconfigure(1, weight=1)
-        label = ttk.Label(frame, text="Baseline: stock unit configuration and KWIPv3 turret defaults" if defaults else "Changes since this file was opened or last saved.")
+        label = ttk.Label(frame, text="Baseline: stock unit configuration and KWIPv3 extension defaults" if defaults else "Changes since this file was opened or last saved.")
         label.grid(row=0, column=0, sticky="w", pady=(0, self.px(8)))
         table = ttk.Treeview(frame, columns=("unit", "stat", "old", "new", "delta"), show="headings")
         for key, heading, width in (("unit", "Unit", 310), ("stat", "Stat", 170), ("old", "Default" if defaults else "Saved", 90), ("new", "Current", 90), ("delta", "Delta", 90)):

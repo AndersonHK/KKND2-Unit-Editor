@@ -110,6 +110,43 @@ static int __cdecl ai_building_rate(const Byte* frame, int rate) {
     return best < 0 ? rate : scaled_rate(rate, production_factors[((first - 72) / 3) * 6 + best]);
 }
 
+// Placement starts a separate construction bill, bypassing menu production.
+// Store the adjusted rate in the construction record itself, so save/load and
+// progress share it and a resumed game does not apply the multiplier twice.
+static int __cdecl player_building_rate(const Byte* frame, int rate) {
+    const Unit* building = field<Unit*>(frame - 0x28, 0);
+    const Byte* definition = field<const Byte*>(building, 0x60);
+    const int category = field<unsigned short>(definition, 0xe4);
+    if (category < 4) return rate;
+    const int first = category >= 5 ? 81 : 72;
+    const Byte player = field<Byte>(building, 0x2fc);
+    const Unit* sentinel = reinterpret_cast<const Unit*>(0x5c27d8);
+    int best = -1;
+    for (const Unit* unit = field<Unit*>(sentinel, 0); unit && unit != sentinel; unit = field<Unit*>(unit, 0)) {
+        const int id = field<int>(unit, 0x5c);
+        if (id >= first && id < first + 3 && field<Byte>(unit, 0x2fc) == player &&
+            !field<Byte>(unit, 0x30f) && field<const Byte*>(unit, 0x68) && tier(unit) > best)
+            best = tier(unit);
+    }
+    return best < 0 ? rate : scaled_rate(rate, production_factors[((first - 72) / 3) * 6 + best]);
+}
+EXPORT __declspec(naked) void player_construction() {
+    __asm {
+        pushfd
+        pushad
+        push eax
+        push ebp
+        call player_building_rate
+        add esp, 8
+        mov [esp+28], eax
+        popad
+        popfd
+        mov edx, [ebp-2ch]
+        mov [edx+12h], ax
+        ret
+    }
+}
+
 // Small, audited adapters replace whole instructions. PUSHAD isolates the C++
 // helpers from each game's live register set; only the documented output changes.
 EXPORT __declspec(naked) void lab_start() {

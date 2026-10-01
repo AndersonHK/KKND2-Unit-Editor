@@ -7,9 +7,21 @@ extern "C" {
     __declspec(dllexport) Word zero_damage = 0;
     __declspec(dllexport) Word damage_priority = 0;
     __declspec(dllexport) Word acquisition_range = 0;
+    typedef void (__fastcall *UnitTick)(Unit*);
+    __declspec(dllexport) UnitTick original_idle = 0;
+    __declspec(dllexport) UnitTick original_chase = 0;
+    __declspec(dllexport) UnitTick original_chase_result = 0;
     __declspec(dllexport) Selector original_near = 0;
     __declspec(dllexport) Selector original_wide = 0;
+    __declspec(dllexport) Selector original_fallback = 0;
     __declspec(dllexport) Validator original_validate = 0;
+    __declspec(dllexport) Selector original_compatible = 0;
+    typedef void (__fastcall *Cursor)(Byte*, Word);
+    typedef int (__fastcall *Order)(Byte*, Word, Unit*);
+    typedef int (__fastcall *Event)(Byte*, Word, Byte*, Byte*);
+    __declspec(dllexport) Cursor original_cursor = 0;
+    __declspec(dllexport) Order original_order = 0;
+    __declspec(dllexport) Event original_event = 0;
 }
 
 static const Byte* weapon(Unit* unit) {
@@ -39,13 +51,80 @@ static int target_class(const Target* target) {
     return -1; // Explicit ground/other special actions retain native behavior.
 }
 
+static bool zero_target(Unit* unit, const Target* target) {
+    if (!zero_damage) return false;
+    if (static_cast<Byte>(target->type) == 0) {
+        if (!target->object) return false;
+        // Do not inspect a definition through an expired/reused target identity.
+        const Word identity = field<unsigned short>(reinterpret_cast<void*>(target->object), 0x212);
+        if (!identity || identity != target->identity) return false;
+    }
+    const int type = target_class(target);
+    const Byte* current_weapon = weapon(unit);
+    return type >= 0 && type < 5 && current_weapon &&
+        field<short>(current_weapon, kwip::damage + type * 2) == 0;
+}
+
+static Target unit_target(Unit* unit) {
+    Target target = {0, reinterpret_cast<Word>(unit), field<unsigned short>(unit, 0x212), 0};
+    return target;
+}
+
+// This second native predicate is used before attack-order pursuit, separately
+// from the firing validator. False means incompatible, not merely out of range.
+EXPORT int __fastcall compatible_target(Unit* unit, Target* target) {
+    if (zero_target(unit, target)) return 0;
+    return original_compatible(unit, target);
+}
+
+static bool selection_can_damage(Unit* target) {
+    if (!zero_damage || !target) return true;
+    const short selection = *reinterpret_cast<short*>(0x565418);
+    if (!selection) return false;
+    Target value = unit_target(target);
+    Unit* sentinel = reinterpret_cast<Unit*>(0x5c27d8);
+    for (Unit* unit = field<Unit*>(sentinel, 0); unit != sentinel; unit = field<Unit*>(unit, 0)) {
+        if (field<short>(unit, 0x226) != selection || field<Byte>(unit, 0x30f) || field<Word>(unit, 0x1fc)) continue;
+        // An unarmed support unit must not make a mixed selection attack-capable.
+        if (weapon(unit) && !zero_target(unit, &value) && original_compatible(unit, &value)) return true;
+    }
+    return false;
+}
+
+EXPORT void __fastcall attack_cursor(Byte* controller, Word cursor) {
+    Unit* hover = field<Unit*>(controller, 0x24);
+    if (cursor == 0x1e0 && hover && !selection_can_damage(hover)) cursor = 0x214;
+    original_cursor(controller, cursor);
+}
+
+EXPORT int __fastcall issue_order(Byte* controller, Word command, Unit* target) {
+    if (command == 6 && !selection_can_damage(target)) return 0;
+    return original_order(controller, command, target);
+}
+
+// Network/queued group commands reach each unit as event 0x30. Reject only that
+// unit's incompatible attack, without editing the command shared by its peers.
+EXPORT int __fastcall deliver_event(Byte* sender, Word event, Byte* argument, Byte* script) {
+    if (zero_damage && event == 0x30 && argument && script) {
+        const Word handler = field<Word>(script, 0x34);
+        if (handler == 0x4db808 || handler == 0x487b0b || handler == 0x4af422 || handler == 0x4ac504) {
+            Unit* unit = field<Unit*>(script, 0x3c);
+            const Byte* command = field<const Byte*>(argument, 4);
+            if (unit && field<Byte*>(unit, 0x58) == script && command && field<short>(command, 0xa) == 6) {
+                Target target = {0, field<Word>(command, 0x1c), field<Word>(command, 0x20), 0};
+                if (zero_target(unit, &target)) return 0;
+            }
+        }
+    }
+    return original_event(sender, event, argument, script);
+}
+
 EXPORT int __fastcall validate_target(Unit* unit, Target* target, Target* auxiliary, Word flags) {
     const int result = original_validate(unit, target, auxiliary, flags);
     if (result == 4) return result; // Native generation-ID check rejected a stale target.
     const int type = target_class(target);
     if (type < 0 || type >= 5) return result;
-    const Byte* current_weapon = weapon(unit);
-    if (current_weapon && zero_damage && field<short>(current_weapon, kwip::damage + type * 2) == 0)
+    if (zero_target(unit, target))
         return 4; // Reject even out-of-range targets, so zero damage does not cause pursuit.
     if (search && search->unit == unit && !(search->classes & (1u << type))) return 4;
     return result;
@@ -53,7 +132,16 @@ EXPORT int __fastcall validate_target(Unit* unit, Target* target, Target* auxili
 
 static int select_target(Selector original, Unit* unit, Target* target) {
     const Byte* current_weapon = weapon(unit);
-    if (!damage_priority || !current_weapon) return original(unit, target);
+    if (!damage_priority || !current_weapon) {
+        Search context = {unit, 31, search};
+        search = &context;
+        const int result = original(unit, target);
+        search = context.previous;
+        // Fight callers inspect the output rather than the return value. Native
+        // failed scans can leave their last REJECTED candidate in this buffer.
+        if (!result) { target->type = 0; target->object = 0; target->identity = 0; target->z = 0; }
+        return result;
+    }
     short damages[5];
     for (int i = 0; i < 5; ++i) damages[i] = field<short>(current_weapon, kwip::damage + i * 2);
     Word remaining = 31;
@@ -87,13 +175,13 @@ static int acquire(Selector original, Unit* unit, Target* target) {
     if (result) return result;
     Word local_definition[0x110 / 4];
     for (int i = 0; i < 0x110 / 4; ++i) local_definition[i] = field<Word>(definition, i * 4);
-    local_definition[0x24 / 4] += 32;
+    local_definition[0x24 / 4] += 96;
     Byte* turret = field<Byte*>(unit, kwip::turret);
     const Byte* turret_definition = turret ? field<const Byte*>(turret, kwip::turret_definition) : 0;
     Word local_turret[0x38 / 4];
     if (turret_definition) {
         for (int i = 0; i < 0x38 / 4; ++i) local_turret[i] = field<Word>(turret_definition, i * 4);
-        local_turret[0x2c / 4] += 32;
+        local_turret[0x2c / 4] += 96;
         *reinterpret_cast<const void**>(turret + kwip::turret_definition) = local_turret;
     }
     *reinterpret_cast<const void**>(reinterpret_cast<Byte*>(unit) + kwip::definition) = local_definition;
@@ -103,8 +191,94 @@ static int acquire(Selector original, Unit* unit, Target* target) {
         *reinterpret_cast<const void**>(turret + kwip::turret_definition) = turret_definition;
     return result;
 }
-EXPORT int __fastcall select_near(Unit* unit, Target* target) { return acquire(original_near, unit, target); }
+// Firing-only scanners must not retain an out-of-range turret target. Idle
+// acquisition below owns the movement hand-off; Fight has its own pursuit.
+EXPORT int __fastcall select_near(Unit* unit, Target* target) { return select_target(original_near, unit, target); }
+
+static void resume_idle(Unit* unit) {
+    *reinterpret_cast<short*>(reinterpret_cast<Byte*>(unit) + 0x2e6) = 1;
+    *reinterpret_cast<Word*>(reinterpret_cast<Byte*>(unit) + 0x90) = 0x4cbd4a;
+}
+
+// Vanilla temporary pursuit starts from a move order and assumes +114 exists.
+// Newly created idle units can have no command node. Do not fabricate a queue
+// node; handle its missing-order exits before native code dereferences it.
+EXPORT void __fastcall acquisition_chase(Unit* unit) {
+    if (!field<Word>(unit, 0x114)) {
+        const Byte* current_weapon = weapon(unit);
+        Target auxiliary = {0, 0, 0, 0};
+        const int result = current_weapon ? reinterpret_cast<Validator>(0x4a265e)(unit,
+            reinterpret_cast<Target*>(reinterpret_cast<Byte*>(unit) + 0x144), &auxiliary,
+            field<Word>(current_weapon, 0x34)) : 4;
+        if (result == 4) { resume_idle(unit); return; }
+        // After the shot, the native order dispatcher returns to idle rather
+        // than leaving an orderless unit in the temporary pursuit state.
+        if (result == 0) *reinterpret_cast<short*>(reinterpret_cast<Byte*>(unit) + 0x2e6) = 1;
+    }
+    original_chase(unit);
+}
+EXPORT void __fastcall acquisition_chase_result(Unit* unit) {
+    const Byte result = field<Byte>(unit, 0x2f7);
+    if (!field<Word>(unit, 0x114) && (result == 4 || result == 5)) {
+        resume_idle(unit);
+        return;
+    }
+    original_chase_result(unit);
+}
+
+EXPORT void __fastcall idle_acquire(Unit* unit) {
+    const Byte* definition = field<const Byte*>(unit, kwip::definition);
+    const Byte* current_weapon = weapon(unit);
+    const Byte* turret = field<const Byte*>(unit, kwip::turret);
+    const Byte* turret_definition = turret ? field<const Byte*>(turret, kwip::turret_definition) : 0;
+    const Word flags = turret_definition ? field<Word>(turret_definition, 0x34) : field<Word>(definition, 0x98);
+    // Only idle ground combat units: preserve hold, move, guard, special actions,
+    // contained units and the native do-not-auto-attack flag. Air has its own FSM.
+    if (acquisition_range && current_weapon && field<short>(unit, 0x2e6) == 1 &&
+        field<unsigned short>(definition, 0xe4) < 3 && !(flags & 0x1000) &&
+        !field<Word>(unit, 0x1fc) && !field<Byte>(unit, 0x30f)) {
+        const Word shift = (*reinterpret_cast<const Word*>(0x51058c) >> 9) & 31;
+        const Word mask = 0x7f >> shift;
+        // Same staggered schedule as native infantry idle scans, not every tick.
+        if (((*reinterpret_cast<const Word*>(0x55eaf8)) & mask) ==
+            (field<unsigned short>(unit, 0x212) & mask)) {
+            Target target = {0, 0, 0, 0}, auxiliary = {0, 0, 0, 0};
+            if (acquire(original_near, unit, &target) &&
+                reinterpret_cast<Validator>(0x4a265e)(unit, &target, &auxiliary, field<Word>(current_weapon, 0x34)) == 1) {
+                // Native temporary pursuit remembers the real order in +114,
+                // computes a path, then switches to firing at the original range.
+                *reinterpret_cast<Target*>(reinterpret_cast<Byte*>(unit) + 0x144) = target;
+                reinterpret_cast<UnitTick>(0x4ce727)(unit);
+                return;
+            }
+        }
+    }
+    original_idle(unit);
+}
 EXPORT int __fastcall select_wide(Unit* unit, Target* target) { return acquire(original_wide, unit, target); }
+
+// Fight's last-resort whole-unit-list scan never calls the firing validator.
+// Keep its native traversal/distance tie breaking, but filter each candidate.
+EXPORT int __fastcall fallback_candidate(Word player, Unit* candidate) {
+    typedef int (__fastcall *Alliance)(Word, Unit*);
+    if (!reinterpret_cast<Alliance>(0x4c61bc)(player, candidate)) return 0;
+    if (!search) return 1;
+    Target target = unit_target(candidate);
+    const int type = target_class(&target);
+    if (zero_target(search->unit, &target) ||
+        (type >= 0 && type < 5 && !(search->classes & (1u << type)))) return 0;
+    if (!reinterpret_cast<Selector>(0x4a9b40)(search->unit, &target)) return 0;
+    Target auxiliary = {0, 0, 0, 0};
+    return reinterpret_cast<Validator>(0x451370)(search->unit, &target, &auxiliary, 8);
+}
+
+EXPORT int __fastcall select_fallback(Unit* unit, Target* target) {
+    // In-range targets win before Fight pursues a more distant target.
+    // Preserve Fight's sight-wide fallback, including passive buildings.
+    // Acquisition is an extra automatic search, not a restriction on Fight.
+    int result = select_target(original_near, unit, target);
+    return result ? result : select_target(original_fallback, unit, target);
+}
 
 static int __fastcall income_building_limit(const Byte* ai, Word slot) {
     const Byte* faction = field<const Byte*>(ai, 8);

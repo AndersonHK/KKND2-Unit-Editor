@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import struct
 import tempfile
+from .armor_data import ARMOR, ARMOR_TYPES, ARMOR_NAMES
 
 # Verified KWIPv3 vehicle turret definitions. Infantry/direct weapons still use
 # native Bullet-Count; specialized tower/aircraft handlers are not covered here.
@@ -27,7 +28,7 @@ BURSTS = {
     'UNIT_ROBOT_GRIMREAPER': (71, 0x52ae80, 15),
 }
 SCHEMA = 'kknd2-editor-unit-extensions'
-VERSION = 1
+VERSION = 2
 MAX_BURST = 127  # Runtime counter unit+0x310 is incremented/read as signed char.
 
 
@@ -38,17 +39,23 @@ def extension_path(config_path):
     return path.with_name(path.stem + '_ext.cfg')
 
 
-def validate(units, identifiers=None):
+def validate(units, identifiers=None, version=VERSION):
     if not isinstance(units, dict):
         raise ValueError('Extended units must be an object keyed by unit ID.')
     for identifier, fields in units.items():
-        if identifier not in BURSTS or (identifiers is not None and identifier not in identifiers):
+        if identifier not in ARMOR or (identifiers is not None and identifier not in identifiers):
             raise ValueError(f'Unsupported extended unit: {identifier}')
-        if not isinstance(fields, dict) or set(fields) != {'burst_count'}:
-            raise ValueError(f'{identifier}: expected burst_count only.')
-        value = fields['burst_count']
-        if type(value) is not int or not 1 <= value <= MAX_BURST:
-            raise ValueError(f'{identifier}: Burst Count must be a whole number from 1 to {MAX_BURST}.')
+        allowed = {'burst_count'} if version == 1 else {'burst_count', 'armor_type'}
+        if not isinstance(fields, dict) or not fields or not set(fields) <= allowed:
+            raise ValueError(f'{identifier}: unsupported extended fields.')
+        if 'burst_count' in fields:
+            value = fields['burst_count']
+            if identifier not in BURSTS or type(value) is not int or not 1 <= value <= MAX_BURST:
+                raise ValueError(f'{identifier}: Burst Count requires a supported turret and a whole number from 1 to {MAX_BURST}.')
+        if 'armor_type' in fields:
+            value = fields['armor_type']
+            if type(value) is not int or value not in ARMOR_NAMES:
+                raise ValueError(f'{identifier}: Armor Type must be a supported integer enum (0–4).')
     return units
 
 
@@ -87,9 +94,9 @@ class UnitExtensions:
                 data = json.loads(self.raw[120:].decode('utf-8'), object_pairs_hook=unique_object)
                 if not isinstance(data, dict) or set(data) != {'schema', 'version', 'units'}:
                     raise ValueError('Expected schema, version and units.')
-                if data['schema'] != SCHEMA or type(data['version']) is not int or data['version'] != VERSION:
+                if data['schema'] != SCHEMA or type(data['version']) is not int or data['version'] not in (1, VERSION):
                     raise ValueError('Unsupported unit-extension schema or version.')
-                self.units = validate(data['units'], identifiers)
+                self.units = validate(data['units'], identifiers, data['version'])
             except (ValueError, UnicodeError) as exc:
                 raise ValueError(f'Cannot read {self.path.name}: {exc}') from exc
 
@@ -135,12 +142,21 @@ def patch_plan(read, units):
     validate(units)
     plan = []
     for identifier, fields in units.items():
-        enum, turret, default = BURSTS[identifier]
-        for address, expected in ((0x52bed8 + enum * 0x110 + 0x60, turret),
-                                  (turret + 0x28, 0x4da4d9), (turret + 0x10, default)):
-            if read(address, 4) != struct.pack('<I', expected):
-                raise ValueError(f'KWIPv3 turret data does not match: {identifier}.')
-        value = fields['burst_count']
-        if value != default:
-            plan.append((turret + 0x10, struct.pack('<I', default), struct.pack('<I', value)))
+        if 'burst_count' in fields:
+            enum, turret, default = BURSTS[identifier]
+            for address, expected in ((0x52bed8 + enum * 0x110 + 0x60, turret),
+                                      (turret + 0x28, 0x4da4d9), (turret + 0x10, default)):
+                if read(address, 4) != struct.pack('<I', expected):
+                    raise ValueError(f'KWIPv3 turret data does not match: {identifier}.')
+            value = fields['burst_count']
+            if value != default:
+                plan.append((turret + 0x10, struct.pack('<I', default), struct.pack('<I', value)))
+        if 'armor_type' in fields:
+            enum, default = ARMOR[identifier]
+            address = 0x52bed8 + enum * 0x110 + 0x9c
+            before = struct.pack('<I', default)
+            if read(address, 4) != before:
+                raise ValueError(f'KWIPv3 armor type does not match: {identifier}.')
+            if fields['armor_type'] != default:
+                plan.append((address, before, struct.pack('<I', fields['armor_type'])))
     return plan

@@ -124,6 +124,35 @@ class NativeUpgradeTests(TestCase):
             e.run(0x419c6d,0x419c77,EAX=100)
             self.assertEqual(struct.unpack('<h',e.cpu.mem_read(ai+0x4912,2))[0],expected)
 
+    def test_placed_construction_rate_and_saved_bill_use_same_multiplier_once(self):
+        values=settings(**{'outpost_speed.4':2,'armoury_speed.3':3})
+        for race in range(3):
+            for category,first,level,factor in ((4,72,4,2),(5,81,3,3),(6,81,3,3)):
+                e=Engine(self.image,values)
+                building,definition,record,other=0x240000,0x241000,0x242000,0x243000
+                e.put(e.frame-0x28,building);e.put(e.frame-0x30,definition);e.put(e.frame-0x2c,record)
+                e.put(building+0x60,definition);e.cpu.mem_write(building+0x2fc,b'\x01')
+                e.put(definition+0xc,300);e.put(definition+0x7c,10);e.short(definition+0xe4,category)
+                e.put(0x50e904,60)
+                e.put(0x5c27d8,e.unit);e.put(e.unit,other);e.put(other,0x5c27d8)
+                e.put(e.unit+0x5c,first+race);e.short(e.state+0x4a,level)
+                e.cpu.mem_write(e.unit+0x2fc,b'\x01')
+                # A higher-tier enemy must not supply our multiplier.
+                e.put(other+0x5c,first+race);e.put(other+0x68,0x244000)
+                e.short(0x24404a,5);e.cpu.mem_write(other+0x2fc,b'\x02')
+                e.run(0x465281,0x4652be)
+                rate=128*factor
+                self.assertEqual(struct.unpack('<3h',e.cpu.mem_read(record+0xe,6)),(300,300,rate))
+                # The existing load path reads the stored adjusted rate, with no
+                # second multiplier. Stop at native billing's verified entry.
+                e.put(e.frame-8,record);e.short(e.frame-0x14,32767);e.short(record+0xa,1)
+                e.cpu.reg_write(UC_X86_REG_EBP,e.frame);e.cpu.reg_write(UC_X86_REG_ESP,e.stack)
+                e.cpu.emu_start(0x460876,0x45eb67,count=10000)
+                sp=e.cpu.reg_read(UC_X86_REG_ESP)
+                self.assertEqual(e.get(sp+4)&65535,300)
+                self.assertEqual(e.get(sp+8),rate)
+                self.assertEqual(e.cpu.reg_read(UC_X86_REG_EDX),record+0x10)
+
     def test_player_bill_wrapper_preserves_abi_and_price(self):
         e=Engine(self.image,settings(**{'vehicle_speed.4':2}))
         menu,group=0x230000,0x231000

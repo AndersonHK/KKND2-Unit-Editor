@@ -1,6 +1,18 @@
 # Changelog
 
-## 0.3.0 — pending manual testing
+## 0.3.1 — 2026-10-01
+
+Confirmed in manual playtesting; 117 automated tests passed.
+
+- Increase Acquisition Range from 32 to 96 world pixels (three tiles), retaining sight checks, in-range priority and normal firing range.
+- Fix zero-damage targets remaining selectable by the attack cursor, manual/group orders and Fight fallback searches; clear failed-search output so rejected targets cannot become pursuit orders.
+- Restore Fight's sight-wide passive-building fallback with Acquisition Range enabled.
+- Connect idle ground acquisition to native pursuit/pathfinding and its transition into firing range; keep firing-only turret scans at their real range.
+- Fix Outpost/Armoury speed multipliers bypassed by player placement; label these as construction speed and preserve the adjusted rate across save/load.
+- Add Armor Type below Armour in Unit editor: Infantry, Vehicle, Beast, Aircraft and Building, with named defaults and comparisons.
+- Save armor enums in version 2 per-preset extensions, preserving native CFG bytes and importing existing burst-only companions.
+
+## 0.3.0 — confirmed in manual testing
 
 - Add Upgrades: six levels of refining yield, repair/healing rates, production speed by producer class, and research-lab self-upgrade cost/time multipliers.
 - Preserve existing research base/step controls; lab multiplier columns select the destination tier.

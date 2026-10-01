@@ -9,14 +9,14 @@ ROWS = {
         hint='Resource units earned per unit of delivered oil', defaults=(1, 1.05, 1.10, 1.15, 1.20, 1.25), minimum=0.1, maximum=3),
     'repair_rate': dict(name='Repair and healing rate',
         hint='HP per repair update at normal speed; game-speed scaled', defaults=(2, 3, 4, 5, 6, 7), minimum=0.1, maximum=32),
-    'outpost_speed': dict(name='Outpost production speed',
-        hint='Speed multiplier: 2 builds in half the time', defaults=(1,)*6, minimum=0.1, maximum=10),
+    'outpost_speed': dict(name='Outpost construction speed',
+        hint='Buildings: 2 halves build time; highest owned tier', defaults=(1,)*6, minimum=0.1, maximum=10),
     'infantry_speed': dict(name='Infantry production speed',
         hint='Speed multiplier: 2 builds in half the time', defaults=(1,)*6, minimum=0.1, maximum=10),
     'vehicle_speed': dict(name='Vehicle production speed',
         hint='Speed multiplier: 2 builds in half the time', defaults=(1,)*6, minimum=0.1, maximum=10),
-    'armoury_speed': dict(name='Armoury production speed',
-        hint='Speed multiplier: 2 builds in half the time', defaults=(1,)*6, minimum=0.1, maximum=10),
+    'armoury_speed': dict(name='Armoury construction speed',
+        hint='Defenses and walls: 2 halves build time; highest owned tier', defaults=(1,)*6, minimum=0.1, maximum=10),
 }
 UPGRADES = {f'{row}.{level}': dict(spec, default=value, level=level, row=row)
             for row, spec in ROWS.items() for level, value in enumerate(spec['defaults'])}

@@ -12,21 +12,34 @@ from . import upgrades_patch
 from .building_limits import validate as validate_limits
 
 HOOKS = {
+    'acquisition_chase': (0x4ce7c6, bytes.fromhex('55 8b ec 83 ec 34')),
+    'acquisition_chase_result': (0x4cec3e, bytes.fromhex('55 8b ec 83 ec 08')),
+    'idle_acquire': (0x4cc43e, bytes.fromhex('55 8b ec 83 ec 1c')),
     'select_near': (0x4a1893, bytes.fromhex('55 8b ec 81 ec 8c 00 00 00')),
     'select_wide': (0x4a2039, bytes.fromhex('55 8b ec 83 ec 74')),
     'validate_target': (0x4a265e, bytes.fromhex('55 8b ec 81 ec 8c 00 00 00')),
+    'select_fallback': (0x4a2455, bytes.fromhex('55 8b ec 83 ec 20')),
+    'fallback_candidate': (0x4a24c1, bytes.fromhex('e8 f6 3c 02 00')),
+    'compatible_target': (0x4a9b40, bytes.fromhex('55 8b ec 83 ec 34')),
+    'attack_cursor': (0x461a90, bytes.fromhex('55 8b ec 83 ec 08')),
+    'issue_order': (0x46319e, bytes.fromhex('55 8b ec 83 ec 08')),
+    'deliver_event': (0x45bc10, bytes.fromhex('55 8b ec 83 ec 0c')),
     'shift_placement': (0x466d01, bytes.fromhex('88 15 08 55 56 00')),
     'ai_solar_limit': (0x4277a6, bytes.fromhex('83 b8 94 00 00 00 04')),
     'ai_thermal_limit': (0x4277f4, bytes.fromhex('83 b8 90 00 00 00 04')),
 }
-CALL_HOOKS = {'shift_placement', 'ai_solar_limit', 'ai_thermal_limit'}
+CALL_HOOKS = {'shift_placement', 'ai_solar_limit', 'ai_thermal_limit', 'fallback_candidate'}
 
 
 def selected_hooks(values, limits=None):
     validate(values)
     names = []
-    if values['damage_priority'] or values['acquisition_range']: names.extend(('select_near', 'select_wide'))
+    if values['damage_priority'] or values['acquisition_range'] or values['zero_damage_filter']:
+        names.extend(('select_near', 'select_wide', 'select_fallback', 'fallback_candidate'))
     if values['damage_priority'] or values['zero_damage_filter']: names.append('validate_target')
+    if values['zero_damage_filter']:
+        names.extend(('compatible_target', 'attack_cursor', 'issue_order', 'deliver_event'))
+    if values['acquisition_range']: names.extend(('idle_acquire', 'acquisition_chase', 'acquisition_chase_result'))
     if values['shift_build']: names.append('shift_placement')
     if limits is not None:
         validate_limits(limits)
@@ -85,7 +98,12 @@ def prepare(read, write, allocate, seal, values, limits=None, upgrades=None):
     set_export('acquisition_range', int(values['acquisition_range']))
     upgrades_patch.fill_payload(image, exports, upgrades)
     cursor = size
-    originals = {'select_near': 'original_near', 'select_wide': 'original_wide', 'validate_target': 'original_validate', 'production_bill': 'original_production'}
+    originals = {'acquisition_chase': 'original_chase', 'acquisition_chase_result': 'original_chase_result',
+                 'idle_acquire': 'original_idle', 'select_near': 'original_near', 'select_wide': 'original_wide',
+                 'select_fallback': 'original_fallback', 'validate_target': 'original_validate',
+                 'compatible_target': 'original_compatible', 'attack_cursor': 'original_cursor',
+                 'issue_order': 'original_order', 'deliver_event': 'original_event',
+                 'production_bill': 'original_production'}
     plan = []
     for name, (site, before) in hooks.items():
         if name in originals:

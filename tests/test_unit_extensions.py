@@ -94,7 +94,7 @@ class ExtensionTests(TestCase):
     def test_schema_validation_and_title_refresh(self):
         header = self.original[:120]
         valid = dict(schema=ext.SCHEMA, version=1, units={ANACONDA: {'burst_count': 3}})
-        for data in (dict(valid, version=2), dict(valid, version=True),
+        for data in (dict(valid, version=3), dict(valid, version=True),
                      dict(valid, units={ANACONDA: {'burst_count': True}}),
                      dict(valid, units={ANACONDA: {'burst_count': 128}}),
                      dict(valid, units={'UNIT_UNKNOWN': {'burst_count': 2}}),

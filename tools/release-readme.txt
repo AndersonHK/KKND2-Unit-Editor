@@ -56,9 +56,13 @@ BASIC USE
    configuration selector, then Launch game. It uses the preset display
    name, not its filename. The checkbox starts off each editor session.
 
-Version @VERSION@ is a testing build: six-level building upgrade curves
-and optional extra acquisition range. In-match validation is still needed
-before sharing as a tested release.
+Version @VERSION@ was confirmed in manual playtesting on 2026-10-01.
+Includes Armor Type per preset, 96-pixel acquisition with ground-unit pursuit,
+Fight and zero-damage targeting fixes, and corrected construction speed upgrades.
+
+Armor Type appears below Armour. Choose Infantry, Vehicle, Beast, Aircraft
+or Building; the value saves beside Burst Count in UCONFIG_nn_ext.cfg.
+It selects the incoming damage category, not the numeric armour amount.
 
 Burst Count appears below Bullet Count for supported vehicle turrets.
 The Anaconda defaults to 2 shots. The allowed range is 1-127; a dash means
@@ -69,7 +73,7 @@ extensions; changing the lobby preset alone does not switch them.
 
 TABS
 ----
-Unit editor     Stats, prices, build times, damage, ranges and turret bursts.
+Unit editor     Stats, prices, build times, damage, ranges, turret bursts and armor type.
 Building limits Maximum instances per player and building type.
 Overrides       Research costs/times, tanker capacity, oil transfer,
                 passive incomes and building placement reach.
@@ -78,7 +82,7 @@ Projectiles     Supported projectile speeds and homing expiration times.
 Upgrades        Six-level oil yield, healing, production speed and lab
                 self-upgrade cost/time multipliers.
 Fixes           Shift build, zero-damage filter, damage-type priority,
-                and mobile acquisition one tile beyond weapon range.
+                and idle ground acquisition/pursuit three tiles beyond weapon range.
 
 Fixes default to OFF. Enable them individually. For damage-type priority,
 enable the zero-damage filter too if useless target classes must be skipped.
@@ -89,8 +93,11 @@ In Upgrades, lab columns are destination levels: level 5 = 2 makes lab
 4-to-5 cost twice as much cash and time. Research base/steps stay in
 Overrides. Production 2 means approximately half the build time, without
 changing cost. All new multipliers default to 1. Acquisition tries targets
-in firing range first, then one extra tile, within sight; it does not
-change firing range. Existing Fixes files import with this toggle off.
+in firing range first, then three extra tiles within sight, and moves
+into range to shoot. Fight retains its sight-wide building fallback.
+Move/Hold/Guard orders and aircraft flight states remain native.
+Outpost and Armoury construction speed applies to player-placed buildings
+and defenses using the highest owned producer tier, without changing price. Existing Fixes files import with this toggle off.
 
 REVIEW AND UNDO
 ---------------

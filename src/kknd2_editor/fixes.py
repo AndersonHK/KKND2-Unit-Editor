@@ -7,13 +7,13 @@ FIXES = {
              'Click again to place another; placement ends when it becomes unavailable.'),
     'zero_damage_filter': dict(default=False, name='Zero damage acts as a target filter',
         hint='Reject target types against which the current weapon deals zero damage.\n'
-             'Applies to automatic targeting and attack checks, including targets out of range.'),
+             'Applies to the attack cursor, manual orders, Fight and automatic targeting.'),
     'damage_priority': dict(default=False, name='Prioritize target types by damage',
         hint='Choose valid target types from highest to lowest weapon damage.\n'
              'Equal damage keeps the game’s selection rules; explicit target orders keep priority.'),
     'acquisition_range': dict(default=False, name='Acquisition Range',
-        hint='Mobile units search 32 world pixels (one tile) beyond weapon range, within sight.\n'
-             'Attack in-range targets first; firing range and line-of-sight checks stay unchanged.'),
+        hint='Idle ground units acquire and chase targets up to 96 pixels beyond weapon range.\n'
+             'In-range targets first; sight/LOS apply. Fight retains its wider building fallback.'),
 }
 
 

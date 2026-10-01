@@ -118,14 +118,14 @@ The launcher also corrects a research progress-bar denominator mismatch. See [ga
 
 The **Fixes** tab offers four independent toggles, each with two description lines and comparisons with default and saved values:
 
-- **Acquisition Range:** mobile units search one tile beyond weapon range, within sight, after trying in-range targets. Actual firing range is unchanged.
+- **Acquisition Range:** idle ground units search three tiles beyond weapon range, within sight, after trying in-range targets, then move in to shoot. Fight keeps its wider search for passive buildings. Actual firing range is unchanged.
 - **Shift build:** hold Shift while placing to keep the same building selected for the next click. Native availability and placement restrictions still apply.
 - **Zero damage acts as a target filter:** reject target classes with zero raw weapon damage, including checks on targets outside firing range.
 - **Prioritize target types by damage:** during automatic acquisition, prefer the highest-damage eligible class. Equal values keep the native selection rules; explicit target orders are not replaced by the ranking.
 
 All four default to **Off**. Enable the zero-damage filter alongside damage priority if zero-damage classes should never be considered. These settings use **fixes.cfg**, schema `kknd2-editor-fixes`, version 2, with four boolean values in a `fixes` mapping. The [stock example](../examples/fixes.example.cfg) is included; personal files are ignored and saves produce no backups.
 
-A small compiled C++ module handles these rules inside the game, with no Python polling or compiler requirement for players. The launcher verifies the supported game before applying it. Targeting changes affect AI as well as human players. See [Behavior fixes](FIXES.md) for exact scope, native implementation, rebuilding and manual test cases. Acquisition Range adds a one-tile search margin for mobile units within sight, with in-range targets first; it does not change firing range or add attack-move.
+A small compiled C++ module handles these rules inside the game, with no Python polling or compiler requirement for players. The launcher verifies the supported game before applying it. Targeting changes affect AI as well as human players. See [Behavior fixes](FIXES.md) for exact scope, native implementation, rebuilding and manual test cases. Acquisition Range adds a three-tile search margin and native pursuit for idle ground units within sight. It preserves explicit Move/Hold/Guard orders and aircraft flight states; it does not change firing range or add attack-move.
 
 ## Upgrades
 
@@ -211,7 +211,7 @@ For an optional real-file integration run, set `KKND2_TEST_FILE` to a configurat
 
 Personal `.cfg` files, backups, game binaries, caches, environments, and local IDE files are ignored by Git. Only stock example configurations are included. Keep game files and personal presets out of contributions.
 
-See [override and combat-order research](OVERRIDES_RESEARCH.md) and the [engine extension backlog](ENGINE_EXTENSION_BACKLOG.md) for proposed features, source-project findings, and outstanding validation. The research notes are historical; the Overrides and Tech unlocks guides describe the implemented controls. Attack-move, expanded acquisition, additional projectile controls, and physics extensions remain exploratory. Native fixes are implemented in C++; see [the build guide](FIXES.md#rebuilding-and-testing) if changing their behavior.
+See [override and combat-order research](OVERRIDES_RESEARCH.md) and the [engine extension backlog](ENGINE_EXTENSION_BACKLOG.md) for proposed features, source-project findings, and outstanding validation. The research notes are historical; the Overrides and Tech unlocks guides describe the implemented controls. Attack-move, further targeting controls, additional projectile controls, and physics extensions remain exploratory. Native fixes are implemented in C++; see [the build guide](FIXES.md#rebuilding-and-testing) if changing their behavior.
 
 ## Campaign unit configurations
 
